@@ -72,11 +72,11 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
     },
   };
 
-  const feedback = buildFeedback(evaluation, input);
+  const feedback = buildAttemptFeedback(evaluation, input);
   return { evaluation, feedback };
 }
 
-function detectMissingComponents(
+export function detectMissingComponents(
   normalized: string,
   questionCode: string,
 ): MissingComponent[] {
@@ -136,7 +136,7 @@ function scoreContent(
   return 5;
 }
 
-function detectCaps(
+export function detectCaps(
   input: EvaluationInput,
   missing: MissingComponent[],
   normalized: string,
@@ -170,7 +170,7 @@ function detectCaps(
   return Array.from(new Set(caps));
 }
 
-function applyCaps(
+export function applyCaps(
   rawScore: 1 | 2 | 3 | 4 | 5,
   capsApplied: ScoreCap[],
 ): 1 | 2 | 3 | 4 | 5 {
@@ -194,7 +194,7 @@ function applyCaps(
   return clamp(ceiling, 1, 5) as 1 | 2 | 3 | 4 | 5;
 }
 
-function buildFeedback(
+export function buildAttemptFeedback(
   evaluation: EvaluationResult,
   input: EvaluationInput,
 ): AttemptFeedback {
@@ -323,6 +323,10 @@ function hasStrategicLayer(text: string) {
 
 function roundScore(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+export function roundWeightedScore(value: number) {
+  return roundScore(value);
 }
 
 function normalizeTopScore(

@@ -3,12 +3,14 @@ import { QuestionWorkspace } from "@/components/question/question-workspace";
 import { getSessionBundle } from "@/lib/rehearse/repositories/memory-store";
 import { appMode } from "@/lib/env";
 
-export default function QuestionPage({
+export const dynamic = "force-dynamic";
+
+export default async function QuestionPage({
   params,
 }: {
   params: { sessionId: string; questionCode: string };
 }) {
-  const bundle = getSessionBundle(params.sessionId);
+  const bundle = await getSessionBundle(params.sessionId);
   if (!bundle) {
     notFound();
   }

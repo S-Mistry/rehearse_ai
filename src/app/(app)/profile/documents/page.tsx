@@ -1,7 +1,10 @@
 import { listDocuments } from "@/lib/rehearse/repositories/memory-store";
+import type { StoredDocumentProfile } from "@/types/rehearse";
 
-export default function DocumentsPage() {
-  const documents = listDocuments();
+export const dynamic = "force-dynamic";
+
+export default async function DocumentsPage() {
+  const documents = await listDocuments();
 
   return (
     <div className="paper-panel rounded-xl p-6">
@@ -13,17 +16,21 @@ export default function DocumentsPage() {
         {documents.length === 0 ? (
           <p className="text-sm text-grey-3">No documents have been added yet.</p>
         ) : (
-          documents.map((document) => (
+          documents.map((document: StoredDocumentProfile) => (
             <div key={document.id} className="rounded-lg border border-grey-5 bg-white/75 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-grey-1">
-                    {document.kind.toUpperCase()} · {document.sourceType}
+                    {document.fileName ?? document.kind.toUpperCase()} · {document.sourceType}
                   </p>
                   <p className="mt-1 text-sm text-grey-3">
                     {document.parseWarnings.length > 0
                       ? document.parseWarnings.join(" ")
                       : "Parsed without warnings."}
+                  </p>
+                  <p className="mt-2 text-xs text-grey-4">
+                    Status: {document.parseStatus} · Provider: {document.provider}
+                    {document.storagePath ? ` · Stored at ${document.storagePath}` : ""}
                   </p>
                 </div>
                 <p className="text-xs text-grey-4">{document.createdAt.slice(0, 10)}</p>

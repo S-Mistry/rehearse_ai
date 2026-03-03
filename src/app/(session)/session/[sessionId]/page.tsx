@@ -1,12 +1,14 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionBundle } from "@/lib/rehearse/repositories/memory-store";
 
-export default function SessionRedirectPage({
+export const dynamic = "force-dynamic";
+
+export default async function SessionRedirectPage({
   params,
 }: {
   params: { sessionId: string };
 }) {
-  const bundle = getSessionBundle(params.sessionId);
+  const bundle = await getSessionBundle(params.sessionId);
   if (!bundle) {
     notFound();
   }

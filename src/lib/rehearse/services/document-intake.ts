@@ -1,6 +1,12 @@
+import { getEffectiveOwnerId } from "@/lib/rehearse/repositories/effective-owner";
+import { uploadDocumentToStorage } from "@/lib/rehearse/services/document-storage";
 import type { DocumentKind } from "@/types/rehearse";
 
-export async function readDocumentInput(formData: FormData, kind: DocumentKind) {
+export async function readDocumentInput(
+  formData: FormData,
+  kind: DocumentKind,
+  documentId: string,
+) {
   const rawText = String(formData.get("text") ?? "").trim();
   const file = formData.get("file");
 
@@ -11,6 +17,7 @@ export async function readDocumentInput(formData: FormData, kind: DocumentKind) 
       rawText,
       storagePath: null,
       fileName: null,
+      parseError: null,
     };
   }
 
@@ -18,13 +25,30 @@ export async function readDocumentInput(formData: FormData, kind: DocumentKind) 
     throw new Error(`Provide pasted text or upload a file for the ${kind.toUpperCase()}.`);
   }
 
-  const extracted = await extractTextFromFile(file);
+  validateSupportedFile(file);
+  const storagePath = await uploadDocumentToStorage({
+    ownerId: getEffectiveOwnerId(),
+    kind,
+    documentId,
+    file,
+  });
+  let extracted = "";
+  let parseError: string | null = null;
+
+  try {
+    extracted = await extractTextFromFile(file);
+  } catch (error) {
+    parseError =
+      error instanceof Error ? error.message : "Unable to parse the uploaded document.";
+  }
+
   return {
     kind,
     sourceType: "upload" as const,
     rawText: extracted,
-    storagePath: null,
+    storagePath,
     fileName: file.name,
+    parseError,
   };
 }
 
@@ -52,6 +76,17 @@ async function extractTextFromFile(file: File) {
       buffer: Buffer.from(arrayBuffer),
     });
     return parsed.value;
+  }
+
+  throw new Error(
+    "Unsupported file format. Use PDF, DOCX, TXT, or paste the document text directly.",
+  );
+}
+
+function validateSupportedFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (!extension || ["pdf", "docx", "txt", "md"].includes(extension)) {
+    return;
   }
 
   throw new Error(

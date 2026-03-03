@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { getHistorySession } from "@/lib/rehearse/repositories/memory-store";
 
-export default function HistoryDetailPage({
+export const dynamic = "force-dynamic";
+
+export default async function HistoryDetailPage({
   params,
 }: {
   params: { sessionId: string };
 }) {
-  const bundle = getHistorySession(params.sessionId);
+  const bundle = await getHistorySession(params.sessionId);
   if (!bundle) {
     notFound();
   }

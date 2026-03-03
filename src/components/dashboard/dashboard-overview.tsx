@@ -14,7 +14,7 @@ export function DashboardOverview({
 
   return (
     <div className="space-y-6">
-      <section className="paper-panel grid gap-6 rounded-xl p-6 lg:grid-cols-[1.4fr_0.9fr]">
+      <section className="paper-panel grid gap-6 rounded-xl p-6 xl:grid-cols-[1.4fr_0.9fr]">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-coral/20 bg-coral/10 px-3 py-1 text-xs uppercase tracking-[0.22em] text-coral">
             Rehearsal Desk
@@ -72,7 +72,7 @@ export function DashboardOverview({
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
+      <section className="grid gap-6 xl:grid-cols-[1.4fr_0.9fr]">
         <div className="paper-panel rounded-xl p-6">
           <div className="flex items-center justify-between">
             <div>

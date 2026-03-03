@@ -3,8 +3,10 @@ import { ArrowRight } from "lucide-react";
 import { listSessionBundles } from "@/lib/rehearse/repositories/memory-store";
 import { formatScore } from "@/lib/utils";
 
-export default function HistoryPage() {
-  const sessions = listSessionBundles();
+export const dynamic = "force-dynamic";
+
+export default async function HistoryPage() {
+  const sessions = await listSessionBundles();
 
   return (
     <div className="paper-panel rounded-xl p-6">

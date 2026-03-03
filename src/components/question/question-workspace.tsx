@@ -11,10 +11,14 @@ import {
   PauseCircle,
   Sparkles,
 } from "lucide-react";
+import { readApiError } from "@/lib/http/api-response";
 import type {
   AttemptFeedback,
+  ApiErrorResponse,
   EvaluationResult,
   SessionBundle,
+  TranscriptProvider,
+  EvaluationProvider,
 } from "@/types/rehearse";
 import { StarCueStrip } from "@/components/question/star-cue-strip";
 import { ScoreSheet } from "@/components/feedback/score-sheet";
@@ -22,15 +26,19 @@ import { cn, formatScore } from "@/lib/utils";
 
 type SubmissionResponse = {
   flagged?: boolean;
-  message?: string;
+  error?: ApiErrorResponse["error"];
   transcript: string;
+  transcriptProvider: TranscriptProvider;
   deliveryMetrics: Record<string, unknown>;
   evaluation: EvaluationResult;
+  evaluationProvider: EvaluationProvider;
   feedback: AttemptFeedback;
   questionStatus: "awaiting_retry" | "scored" | "ended_early";
   remainingAttempts: number;
   nextRoute: string | null;
-  speech: { mimeType: string; base64Audio: string } | null;
+  speech:
+    | { available: false }
+    | { available: true; mimeType: string; audioBase64: string };
 };
 
 export function QuestionWorkspace({
@@ -56,6 +64,11 @@ export function QuestionWorkspace({
   );
   const [latestFeedback, setLatestFeedback] = useState<AttemptFeedback | null>(
     currentQuestion.finalFeedback ?? null,
+  );
+  const [questionStatus, setQuestionStatus] = useState(currentQuestion.status);
+  const [attemptCount, setAttemptCount] = useState(currentQuestion.attemptCount);
+  const [remainingAttempts, setRemainingAttempts] = useState(
+    Math.max(0, 3 - currentQuestion.attemptCount),
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -84,9 +97,9 @@ export function QuestionWorkspace({
     (item) => item.questionCode === questionCode,
   );
 
-  const canRetry = currentQuestion.attemptCount < 3;
+  const canRetry = remainingAttempts > 0 && questionStatus === "awaiting_retry";
   const isFinalized =
-    currentQuestion.status === "scored" || currentQuestion.status === "ended_early";
+    questionStatus === "scored" || questionStatus === "ended_early";
 
   async function startRecording() {
     try {
@@ -148,22 +161,25 @@ export function QuestionWorkspace({
         const payload = (await response.json()) as SubmissionResponse;
 
         if (!response.ok || payload.flagged) {
-          setError(payload.message ?? "Unable to evaluate that answer.");
+          setError(payload.error?.message ?? "Unable to evaluate that answer.");
           return;
         }
 
         setLatestEvaluation(payload.evaluation);
         setLatestFeedback(payload.feedback);
         setTranscript(payload.transcript);
+        setQuestionStatus(payload.questionStatus);
+        setAttemptCount((current) => current + 1);
+        setRemainingAttempts(payload.remainingAttempts);
         setNotice(
           payload.questionStatus === "awaiting_retry"
             ? "Retry available. Tighten the missing component and resubmit."
             : "Score saved. You can move on or review the summary.",
         );
 
-        if (payload.speech) {
+        if (payload.speech.available) {
           const audio = new Audio(
-            `data:${payload.speech.mimeType};base64,${payload.speech.base64Audio}`,
+            `data:${payload.speech.mimeType};base64,${payload.speech.audioBase64}`,
           );
           void audio.play().catch(() => null);
         } else if ("speechSynthesis" in window && payload.feedback?.spokenText) {
@@ -183,11 +199,13 @@ export function QuestionWorkspace({
       const response = await fetch(`/api/questions/${currentQuestion.id}/finalize`, {
         method: "POST",
       });
-      const payload = await response.json();
       if (!response.ok) {
-        setError(payload.message ?? "Unable to finalize this question.");
+        setError((await readApiError(response)) || "Unable to finalize this question.");
         return;
       }
+      const payload = await response.json();
+      setQuestionStatus("ended_early");
+      setRemainingAttempts(0);
       router.push(payload.nextRoute);
     });
   }
@@ -205,7 +223,7 @@ export function QuestionWorkspace({
   );
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[250px_minmax(0,1fr)_320px]">
+    <div className="mx-auto grid w-full max-w-[1600px] gap-6 px-6 py-6 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
       <aside className="paper-panel rounded-xl p-4">
         <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Question set</p>
         <div className="mt-4 space-y-2">
@@ -230,7 +248,10 @@ export function QuestionWorkspace({
           ))}
         </div>
         <div className="mt-5">
-          <StarCueStrip question={currentQuestion} compact />
+          <StarCueStrip
+            question={{ ...currentQuestion, status: questionStatus, attemptCount }}
+            compact
+          />
         </div>
       </aside>
 
@@ -352,7 +373,9 @@ export function QuestionWorkspace({
       </section>
 
       <aside className="space-y-6">
-        <StarCueStrip question={currentQuestion} />
+        <StarCueStrip
+          question={{ ...currentQuestion, status: questionStatus, attemptCount }}
+        />
         <ScoreSheet evaluation={latestEvaluation} feedback={latestFeedback} />
         <div className="paper-panel rounded-xl p-4">
           <p className="text-xs uppercase tracking-[0.22em] text-grey-4">
@@ -378,11 +401,11 @@ export function QuestionWorkspace({
               After each answer, this margin shows the single highest-priority nudge so the next attempt stays focused.
             </p>
           )}
-          {latestEvaluation && currentQuestion.attemptCount < 3 ? (
+          {latestEvaluation && remainingAttempts > 0 ? (
             <button
               type="button"
               onClick={() => {
-                if (currentQuestion.status === "scored" || currentQuestion.status === "ended_early") {
+                if (isFinalized) {
                   router.push(latestEvaluation ? `/session/${bundle.session.id}/summary` : `/session/${bundle.session.id}`);
                   return;
                 }

@@ -4,18 +4,20 @@ import { ArrowRight } from "lucide-react";
 import { getSessionBundle } from "@/lib/rehearse/repositories/memory-store";
 import { formatScore } from "@/lib/utils";
 
-export default function SessionSummaryPage({
+export const dynamic = "force-dynamic";
+
+export default async function SessionSummaryPage({
   params,
 }: {
   params: { sessionId: string };
 }) {
-  const bundle = getSessionBundle(params.sessionId);
+  const bundle = await getSessionBundle(params.sessionId);
   if (!bundle) {
     notFound();
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1600px] space-y-6 px-6 py-6">
       <section className="paper-panel rounded-xl p-6 md:p-8">
         <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Session summary</p>
         <div className="mt-4 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">

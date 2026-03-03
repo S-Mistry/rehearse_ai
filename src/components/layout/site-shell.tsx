@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FileText, LayoutDashboard } from "lucide-react";
 import { appMode } from "@/lib/env";
 import { cn } from "@/lib/utils";
+import { DevRuntimeBadge } from "@/components/layout/dev-runtime-badge";
 
 export function SiteShell({
   children,
@@ -48,6 +49,11 @@ export function SiteShell({
             <FileText size={14} strokeWidth={1.5} className="text-coral" />
             Running in review mode. Voice transcription, TTS, and auth use graceful fallbacks until OpenAI and Supabase env vars are configured.
           </div>
+        </div>
+      ) : null}
+      {process.env.NODE_ENV === "development" ? (
+        <div className="mx-auto flex max-w-7xl justify-end px-4 pt-4 md:px-8">
+          <DevRuntimeBadge />
         </div>
       ) : null}
       <main>{children}</main>

@@ -3,7 +3,7 @@
 ## Runtime Shape
 
 - Next.js App Router provides public marketing pages plus authenticated-style application routes.
-- A local memory repository keeps the product runnable without infrastructure.
+- A local memory repository keeps the product runnable when Supabase server credentials are not configured.
 - Service boundaries mirror production responsibilities: document intake, moderation, transcription, evaluation, and speech.
 - Supabase helpers and SQL migrations are included so the repo can move from demo persistence to production persistence without changing the app shape.
 
@@ -17,7 +17,7 @@
 
 ## Mock Mode
 
-When `OPENAI_API_KEY` or Supabase credentials are missing:
+When `OPENAI_API_KEY` or Supabase server credentials are missing:
 
 - transcription falls back to the manual transcript field
 - evaluation uses the local heuristic engine
@@ -25,3 +25,13 @@ When `OPENAI_API_KEY` or Supabase credentials are missing:
 - persistence uses an in-memory global store
 
 This keeps the product reviewable while preserving the production contracts.
+
+When Supabase credentials are present, the app uses the hosted database path and will fail fast if the schema is missing. Apply [20260303_init.sql](/Users/sunil/projects/rehearse_ai/supabase/migrations/20260303_init.sql) before using the live project.
+
+## Current Supabase env names
+
+The current Supabase docs prefer:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY` only when privileged server-side access is actually needed

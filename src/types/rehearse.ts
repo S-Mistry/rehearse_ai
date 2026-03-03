@@ -56,6 +56,19 @@ export type ScoreCap =
 
 export type SourceType = "upload" | "paste";
 export type DocumentKind = "cv" | "jd";
+export type EffectiveOwnerId = string;
+export type ExtractionProvider = "openai:gpt-4.1-mini" | "fallback:local-parser";
+export type EvaluationProvider = "openai:gpt-4.1" | "fallback:heuristic";
+export type TranscriptProvider = "gpt-4o-transcribe" | "manual-transcript";
+export type ParseStatus = "parsed" | "warning" | "failed";
+
+export interface ApiErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
 
 export interface DeliveryMetrics {
   durationSeconds: number;
@@ -124,6 +137,7 @@ export interface TranscriptAttemptRecord {
   id: string;
   sessionQuestionId: string;
   attemptIndex: number;
+  transcriptProvider: TranscriptProvider;
   transcriptText: string;
   wordCount: number;
   durationSeconds: number;
@@ -140,6 +154,7 @@ export interface EvaluationRecord {
   id: string;
   transcriptAttemptId: string;
   modelName: string;
+  provider: EvaluationProvider;
   promptVersion: string;
   rubricVersion: string;
   contentScoreRaw: number;
@@ -206,11 +221,13 @@ export interface StoredDocumentProfile {
   userId: string;
   kind: DocumentKind;
   storagePath: string | null;
+  fileName: string | null;
   sourceType: SourceType;
   rawText: string;
   structuredJson: CvProfileStructured | JdProfileStructured;
-  parseStatus: "parsed" | "warning";
+  parseStatus: ParseStatus;
   parseWarnings: string[];
+  provider: ExtractionProvider;
   createdAt: string;
 }
 
@@ -258,6 +275,60 @@ export interface SpeechPayload {
   base64Audio: string;
 }
 
+export const missingComponentSchema = z.enum([
+  "situation",
+  "task",
+  "action",
+  "result",
+  "metric",
+  "ownership",
+  "reflection",
+  "tradeoff",
+  "resistance",
+  "strategic_layer",
+]);
+
+export const scoreCapSchema = z.enum([
+  "no_result",
+  "no_ownership",
+  "no_metric",
+  "no_reflection",
+  "no_tradeoff_senior_plus",
+  "authenticity_flag",
+  "short_answer_cap",
+]);
+
+export const cvRoleSchema = z.object({
+  title: z.string(),
+  seniorityLevelEstimate: z.string(),
+  durationMonths: z.number().nullable(),
+  teamSizeManaged: z.number().nullable(),
+  scopeSummary: z.string(),
+});
+
+export const cvAchievementSchema = z.object({
+  description: z.string(),
+  metricType: z.string(),
+  value: z.string(),
+  impactArea: z.string(),
+});
+
+export const cvProfileStructuredSchema = z.object({
+  roles: z.array(cvRoleSchema),
+  quantifiedAchievements: z.array(cvAchievementSchema),
+  competencySignals: z.array(z.string()),
+  industryTags: z.array(z.string()),
+  toolsMethods: z.array(z.string()),
+});
+
+export const jdProfileStructuredSchema = z.object({
+  coreCompetencies: z.array(z.string()),
+  leadershipExpectationLevel: z.string(),
+  strategicVsExecutionWeight: z.string(),
+  stakeholderComplexityLevel: z.string(),
+  performanceKeywords: z.array(z.string()),
+});
+
 export const evaluationResultSchema = z.object({
   contentScoreRaw: z.union([
     z.literal(1),
@@ -282,10 +353,10 @@ export const evaluationResultSchema = z.object({
     z.literal(4),
     z.literal(5),
   ]),
-  missingComponents: z.array(z.string()),
+  missingComponents: z.array(missingComponentSchema),
   strengths: z.array(z.string()),
   nudges: z.array(z.string()),
-  capsApplied: z.array(z.string()),
+  capsApplied: z.array(scoreCapSchema),
   contentReasoning: z.object({
     structure: z.string(),
     ownership: z.string(),

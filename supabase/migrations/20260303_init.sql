@@ -38,10 +38,13 @@ create table if not exists cv_profiles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
   storage_path text,
+  file_name text,
   source_type source_type not null,
   raw_text text not null,
   structured_json jsonb not null,
   parse_status text not null default 'parsed',
+  parse_warnings jsonb not null default '[]'::jsonb,
+  provider text not null default 'fallback:local-parser',
   created_at timestamptz not null default now()
 );
 
@@ -49,10 +52,13 @@ create table if not exists jd_profiles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
   storage_path text,
+  file_name text,
   source_type source_type not null,
   raw_text text not null,
   structured_json jsonb not null,
   parse_status text not null default 'parsed',
+  parse_warnings jsonb not null default '[]'::jsonb,
+  provider text not null default 'fallback:local-parser',
   created_at timestamptz not null default now()
 );
 
@@ -90,13 +96,15 @@ create table if not exists session_questions (
   final_content_weighted numeric(5,1),
   delivery_score numeric(4,1),
   final_feedback_json jsonb,
-  forced_scoring_reason text
+  forced_scoring_reason text,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists transcript_attempts (
   id uuid primary key default gen_random_uuid(),
   session_question_id uuid not null references session_questions(id) on delete cascade,
   attempt_index int not null,
+  transcript_provider text not null default 'manual-transcript',
   transcript_text text not null,
   word_count int not null,
   duration_seconds numeric(6,1) not null,
@@ -113,6 +121,7 @@ create table if not exists evaluations (
   id uuid primary key default gen_random_uuid(),
   transcript_attempt_id uuid not null references transcript_attempts(id) on delete cascade,
   model_name text not null,
+  provider text not null default 'fallback:heuristic',
   prompt_version text not null,
   rubric_version text not null,
   content_score_raw int not null,

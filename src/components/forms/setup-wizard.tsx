@@ -3,31 +3,42 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LoaderCircle, Mic2 } from "lucide-react";
+import { readApiError } from "@/lib/http/api-response";
 import { seniorityConfig } from "@/lib/rehearse/questions/question-bank";
-import type { SeniorityLevel } from "@/types/rehearse";
+import type { SeniorityLevel, StoredDocumentProfile } from "@/types/rehearse";
 import { cn } from "@/lib/utils";
 
 const seniorityLevels = Object.entries(seniorityConfig) as Array<
   [SeniorityLevel, (typeof seniorityConfig)[SeniorityLevel]]
 >;
 
-export function SetupWizard() {
+export function SetupWizard({
+  documents,
+}: {
+  documents: StoredDocumentProfile[];
+}) {
   const [seniorityLevel, setSeniorityLevel] = useState<SeniorityLevel>("senior");
   const [cvText, setCvText] = useState("");
   const [jdText, setJdText] = useState("");
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [jdFile, setJdFile] = useState<File | null>(null);
+  const [selectedCvId, setSelectedCvId] = useState<string>("");
+  const [selectedJdId, setSelectedJdId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const cvDocuments = documents.filter((document) => document.kind === "cv");
+  const jdDocuments = documents.filter((document) => document.kind === "jd");
 
   async function onSubmit() {
     setError(null);
 
     startTransition(async () => {
       try {
-        const cvProfileId = await maybeCreateDocument("cv", cvText, cvFile);
-        const jdProfileId = await maybeCreateDocument("jd", jdText, jdFile);
+        const cvProfileId =
+          selectedCvId || (await maybeCreateDocument("cv", cvText, cvFile));
+        const jdProfileId =
+          selectedJdId || (await maybeCreateDocument("jd", jdText, jdFile));
 
         const sessionResponse = await fetch("/api/sessions", {
           method: "POST",
@@ -40,7 +51,9 @@ export function SetupWizard() {
         });
 
         if (!sessionResponse.ok) {
-          throw new Error("Unable to create the rehearsal session.");
+          throw new Error(
+            (await readApiError(sessionResponse)) || "Unable to create the rehearsal session.",
+          );
         }
 
         const session = await sessionResponse.json();
@@ -49,7 +62,9 @@ export function SetupWizard() {
         });
 
         if (!startResponse.ok) {
-          throw new Error("Unable to start the rehearsal session.");
+          throw new Error(
+            (await readApiError(startResponse)) || "Unable to start the rehearsal session.",
+          );
         }
 
         const started = await startResponse.json();
@@ -66,7 +81,7 @@ export function SetupWizard() {
 
   return (
     <div className="paper-panel rounded-xl p-6 md:p-8">
-      <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
         <div>
           <p className="text-xs uppercase tracking-[0.22em] text-grey-4">
             Setup
@@ -112,6 +127,9 @@ export function SetupWizard() {
               text={cvText}
               onTextChange={setCvText}
               onFileChange={setCvFile}
+              documents={cvDocuments}
+              selectedDocumentId={selectedCvId}
+              onSelectDocument={setSelectedCvId}
             />
 
             <DocumentPanel
@@ -120,6 +138,9 @@ export function SetupWizard() {
               text={jdText}
               onTextChange={setJdText}
               onFileChange={setJdFile}
+              documents={jdDocuments}
+              selectedDocumentId={selectedJdId}
+              onSelectDocument={setSelectedJdId}
             />
           </div>
         </div>
@@ -173,22 +194,51 @@ function DocumentPanel({
   text,
   onTextChange,
   onFileChange,
+  documents,
+  selectedDocumentId,
+  onSelectDocument,
 }: {
   title: string;
   helper: string;
   text: string;
   onTextChange: (value: string) => void;
   onFileChange: (file: File | null) => void;
+  documents: StoredDocumentProfile[];
+  selectedDocumentId: string;
+  onSelectDocument: (value: string) => void;
 }) {
   return (
     <div className="rounded-lg border border-grey-5 bg-white/75 p-4">
       <p className="text-sm font-medium text-grey-1">{title}</p>
       <p className="mt-2 text-sm leading-relaxed text-grey-3">{helper}</p>
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_220px]">
+      {documents.length > 0 ? (
+        <div className="mt-4 rounded-lg border border-grey-5 bg-body/50 p-4">
+          <label className="block text-sm font-medium text-grey-1">
+            Reuse an existing parsed document
+          </label>
+          <select
+            value={selectedDocumentId}
+            onChange={(event) => onSelectDocument(event.target.value)}
+            className="mt-3 w-full rounded-lg border border-grey-5 bg-white px-4 py-3 text-sm text-grey-1 outline-none transition focus:border-coral/40"
+          >
+            <option value="">Use a new upload or pasted text</option>
+            {documents.map((document) => (
+              <option key={document.id} value={document.id}>
+                {document.fileName ?? `${document.kind.toUpperCase()} ${document.createdAt.slice(0, 10)}`} · {document.parseStatus}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-xs text-grey-4">
+            Selecting an existing document skips new upload and text parsing for this step.
+          </p>
+        </div>
+      ) : null}
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_220px]">
         <textarea
           value={text}
           onChange={(event) => onTextChange(event.target.value)}
           rows={8}
+          disabled={Boolean(selectedDocumentId)}
           className="rounded-lg border border-grey-5 bg-body/50 px-4 py-3 text-sm text-grey-1 outline-none transition focus:border-coral/40"
           placeholder="Paste the document text here if you want a no-upload path."
         />
@@ -203,6 +253,7 @@ function DocumentPanel({
             type="file"
             accept=".pdf,.docx,.txt,.md"
             className="mt-4 text-sm text-grey-3"
+            disabled={Boolean(selectedDocumentId)}
             onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
           />
         </label>
@@ -234,10 +285,10 @@ async function maybeCreateDocument(
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readApiError(response);
     throw new Error(message || `Unable to parse the ${kind.toUpperCase()}.`);
   }
 
   const payload = await response.json();
-  return payload[`${kind}ProfileId`] as string;
+  return payload.documentId as string;
 }
