@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { jsonError } from "@/lib/http/api-response";
 import { getHistorySession } from "@/lib/rehearse/repositories/memory-store";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _request: Request,
   { params }: { params: { sessionId: string } },
