@@ -30,8 +30,8 @@ export default async function HistoryPage() {
               </p>
             </div>
             <div className="flex items-center gap-6 text-sm text-grey-3">
-              <span>Weighted {formatScore(bundle.aggregate.averageWeightedContent)}</span>
-              <span>Delivery {formatScore(bundle.aggregate.averageDelivery)}</span>
+              <span>Delivery {formatScore(bundle.aggregate.averageDelivery)}/5</span>
+              <span>{bundle.aggregate.completedQuestions} questions scored</span>
               <ArrowRight size={14} strokeWidth={1.5} />
             </div>
           </Link>

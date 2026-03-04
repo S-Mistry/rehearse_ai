@@ -23,7 +23,7 @@ export function DashboardOverview({
             Practice answers that sound structured, senior, and credible.
           </h1>
           <p className="mt-5 max-w-2xl text-lg leading-relaxed text-grey-3">
-            Move question by question, close rubric gaps with guided retries, and keep content and delivery scores separate.
+            Move question by question, rehearse live answers, and get clearer coaching on what landed and what still needs work.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -44,13 +44,13 @@ export function DashboardOverview({
         <div className="grid gap-4 rounded-lg border border-grey-5 bg-body/50 p-4">
           <div className="rounded-lg border border-grey-5 bg-white/75 p-4">
             <p className="text-xs uppercase tracking-[0.22em] text-grey-4">
-              Latest weighted content
+              Latest session progress
             </p>
             <p className="mt-3 font-serif text-4xl font-medium tracking-tight">
-              {latest ? formatScore(latest.aggregate.averageWeightedContent) : "—"}
+              {latest ? `${latest.aggregate.completedQuestions}/${latest.aggregate.totalQuestions}` : "—"}
             </p>
             <p className="mt-2 text-sm text-grey-3">
-              out of {latest ? formatScore(latest.aggregate.averageWeightedMax) : "—"}
+              questions completed in the latest rehearsal
             </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -112,8 +112,8 @@ export function DashboardOverview({
                     </p>
                   </div>
                   <div className="text-right text-sm text-grey-3">
-                    <p>Weighted {formatScore(session.aggregate.averageWeightedContent)}</p>
-                    <p>Delivery {formatScore(session.aggregate.averageDelivery)}</p>
+                    <p>Delivery {formatScore(session.aggregate.averageDelivery)}/5</p>
+                    <p>{session.aggregate.completedQuestions} questions scored</p>
                   </div>
                 </div>
               </Link>

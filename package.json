@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "spike:score-models": "npx tsx scripts/score-model-spike.ts"
   },
   "keywords": [],
   "author": "",
@@ -29,10 +30,13 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^25.3.3",
     "@types/react": "^19.2.14",
     "autoprefixer": "^10.4.27",
     "eslint": "^10.0.2",
+    "jsdom": "^24.1.3",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",

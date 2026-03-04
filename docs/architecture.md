@@ -26,7 +26,13 @@ When `OPENAI_API_KEY` or Supabase server credentials are missing:
 
 This keeps the product reviewable while preserving the production contracts.
 
-When Supabase credentials are present, the app uses the hosted database path and will fail fast if the schema is missing. Apply [20260303_init.sql](/Users/sunil/projects/rehearse_ai/supabase/migrations/20260303_init.sql) before using the live project.
+When Supabase credentials are present, the app uses the hosted database path and intentionally does not fall back to memory mode. Apply every SQL file in [supabase/migrations/](/Users/sunil/projects/rehearse_ai/supabase/migrations) in timestamp order before using the live project:
+
+1. [20260303_init.sql](/Users/sunil/projects/rehearse_ai/supabase/migrations/20260303_init.sql)
+2. [20260303_phase2_contracts.sql](/Users/sunil/projects/rehearse_ai/supabase/migrations/20260303_phase2_contracts.sql)
+3. [20260303_live_interview_contracts.sql](/Users/sunil/projects/rehearse_ai/supabase/migrations/20260303_live_interview_contracts.sql)
+
+If the hosted schema is stale, the app fails fast with a migration-specific error.
 
 ## Current Supabase env names
 

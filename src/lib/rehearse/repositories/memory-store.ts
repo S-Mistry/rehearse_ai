@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type {
   AttemptFeedback,
+  ConversationTurn,
   DeliveryMetrics,
   EvaluationRecord,
   EvaluationResult,
@@ -19,6 +20,8 @@ import { computeDeliveryMetrics } from "@/lib/rehearse/delivery/metrics";
 import { evaluateAnswerHeuristically } from "@/lib/rehearse/scoring/evaluate-answer";
 import { questionBank, seniorityConfig } from "@/lib/rehearse/questions/question-bank";
 import { getEffectiveOwnerId } from "@/lib/rehearse/repositories/effective-owner";
+import { normalizeSupabaseError } from "@/lib/rehearse/repositories/supabase-errors";
+import { ensureSupabaseSchemaCompatible } from "@/lib/rehearse/repositories/supabase-schema";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { appMode } from "@/lib/env";
 
@@ -56,7 +59,7 @@ export async function listDocuments(kind?: "cv" | "jd") {
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
 
       if (kind) {
         const table = kind === "cv" ? "cv_profiles" : "jd_profiles";
@@ -100,7 +103,7 @@ export async function createDocument(
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
       const table = input.kind === "cv" ? "cv_profiles" : "jd_profiles";
       const { data, error } = await client
         .from(table)
@@ -128,13 +131,15 @@ export async function createDocument(
 
 export async function createSession(input: {
   seniorityLevel: SeniorityLevel;
+  targetRoleTitle?: string | null;
+  targetCompanyName?: string | null;
   cvProfileId: string | null;
   jdProfileId: string | null;
 }) {
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
 
       const { data: sessionRow, error: sessionError } = await client
         .from("sessions")
@@ -143,6 +148,8 @@ export async function createSession(input: {
           status: "ready",
           seniority_level: input.seniorityLevel,
           seniority_multiplier: seniorityConfig[input.seniorityLevel].multiplier,
+          target_role_title: input.targetRoleTitle ?? null,
+          target_company_name: input.targetCompanyName ?? null,
           cv_profile_id: input.cvProfileId,
           jd_profile_id: input.jdProfileId,
         })
@@ -185,7 +192,7 @@ export async function startSession(sessionId: string) {
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
 
       const { data, error } = await client
         .from("sessions")
@@ -207,7 +214,7 @@ export async function getSessionBundle(sessionId: string): Promise<SessionBundle
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
       return fetchSessionBundleFromSupabase(client, sessionId);
     },
     () => Promise.resolve(getSessionBundleMemory(sessionId)),
@@ -218,7 +225,7 @@ export async function listSessionBundles() {
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
       const { data, error } = await client
         .from("sessions")
         .select("id")
@@ -254,7 +261,7 @@ export async function getSessionQuestion(sessionQuestionId: string) {
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
       return fetchSessionQuestionFromSupabase(client, sessionQuestionId);
     },
     () => Promise.resolve(getSessionQuestionMemory(sessionQuestionId)),
@@ -265,6 +272,7 @@ export async function submitQuestionAttempt(input: {
   sessionQuestionId: string;
   transcriptProvider: TranscriptAttemptRecord["transcriptProvider"];
   transcriptText: string;
+  conversationTurns?: ConversationTurn[];
   durationSeconds: number;
   deliveryMetrics: DeliveryMetrics;
   evaluationProvider: EvaluationRecord["provider"];
@@ -276,7 +284,7 @@ export async function submitQuestionAttempt(input: {
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
       const question = await fetchSessionQuestionFromSupabase(client, input.sessionQuestionId);
       if (!question) {
         return null;
@@ -292,6 +300,7 @@ export async function submitQuestionAttempt(input: {
           attempt_index: attemptIndex,
           transcript_provider: input.transcriptProvider,
           transcript_text: input.transcriptText,
+          conversation_turns_json: input.conversationTurns ?? [],
           word_count: metrics.wordCount,
           duration_seconds: metrics.durationSeconds,
           filler_count: metrics.fillerCount,
@@ -373,7 +382,7 @@ export async function finalizeQuestion(
   return withRepository(
     async () => {
       const client = createSupabaseAdminClient()!;
-      await ensureSupabaseSeeded();
+      await ensureSupabaseReady(client);
       const question = await fetchSessionQuestionFromSupabase(client, sessionQuestionId);
       if (!question) {
         return null;
@@ -439,13 +448,17 @@ async function getRepositoryMode() {
   return repositoryMode;
 }
 
-async function ensureSupabaseSeeded() {
-  if (supabaseSeeded) {
-    return;
-  }
+async function ensureSupabaseReady(
+  client: NonNullable<ReturnType<typeof createSupabaseAdminClient>>,
+) {
+  await ensureSupabaseSchemaCompatible(client);
+  await ensureSupabaseSeeded(client);
+}
 
-  const client = createSupabaseAdminClient();
-  if (!client) {
+async function ensureSupabaseSeeded(
+  client: NonNullable<ReturnType<typeof createSupabaseAdminClient>>,
+) {
+  if (supabaseSeeded) {
     return;
   }
 
@@ -487,25 +500,6 @@ async function ensureSupabaseSeeded() {
   }
 
   supabaseSeeded = true;
-}
-
-function normalizeSupabaseError(error: unknown) {
-  if (
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    error.code === "PGRST205"
-  ) {
-    return new Error(
-      "Supabase schema is missing. Run supabase/migrations/20260303_init.sql in the project SQL editor, then retry.",
-    );
-  }
-
-  if (error instanceof Error) {
-    return error;
-  }
-
-  return new Error("Supabase request failed.");
 }
 
 async function fetchSessionBundleFromSupabase(
@@ -796,6 +790,10 @@ function mapSessionRow(row: Record<string, unknown>, questionIds: string[]): Ses
     status: row.status as SessionRecord["status"],
     seniorityLevel: row.seniority_level as SeniorityLevel,
     seniorityMultiplier: Number(row.seniority_multiplier),
+    targetRoleTitle:
+      row.target_role_title == null ? null : String(row.target_role_title),
+    targetCompanyName:
+      row.target_company_name == null ? null : String(row.target_company_name),
     cvProfileId: row.cv_profile_id == null ? null : String(row.cv_profile_id),
     jdProfileId: row.jd_profile_id == null ? null : String(row.jd_profile_id),
     startedAt: row.started_at == null ? null : String(row.started_at),
@@ -847,6 +845,9 @@ function mapAttemptRow(row: Record<string, unknown>): TranscriptAttemptRecord {
     transcriptProvider: (row.transcript_provider ??
       "manual-transcript") as TranscriptAttemptRecord["transcriptProvider"],
     transcriptText: String(row.transcript_text),
+    conversationTurns:
+      (row.conversation_turns_json as TranscriptAttemptRecord["conversationTurns"] | null) ??
+      [],
     wordCount: Number(row.word_count),
     durationSeconds: Number(row.duration_seconds),
     fillerCount: Number(row.filler_count),
@@ -905,6 +906,8 @@ function createDocumentMemory(
 
 function createSessionMemory(input: {
   seniorityLevel: SeniorityLevel;
+  targetRoleTitle?: string | null;
+  targetCompanyName?: string | null;
   cvProfileId: string | null;
   jdProfileId: string | null;
 }) {
@@ -916,6 +919,8 @@ function createSessionMemory(input: {
     status: "ready",
     seniorityLevel: input.seniorityLevel,
     seniorityMultiplier: seniorityConfig[input.seniorityLevel].multiplier,
+    targetRoleTitle: input.targetRoleTitle ?? null,
+    targetCompanyName: input.targetCompanyName ?? null,
     cvProfileId: input.cvProfileId,
     jdProfileId: input.jdProfileId,
     startedAt: null,
@@ -1020,6 +1025,7 @@ function submitQuestionAttemptMemory(input: {
   sessionQuestionId: string;
   transcriptProvider: TranscriptAttemptRecord["transcriptProvider"];
   transcriptText: string;
+  conversationTurns?: ConversationTurn[];
   durationSeconds: number;
   deliveryMetrics: DeliveryMetrics;
   evaluationProvider: EvaluationRecord["provider"];
@@ -1044,6 +1050,7 @@ function submitQuestionAttemptMemory(input: {
     attemptIndex,
     transcriptProvider: input.transcriptProvider,
     transcriptText: input.transcriptText,
+    conversationTurns: input.conversationTurns ?? [],
     wordCount: metrics.wordCount,
     durationSeconds: metrics.durationSeconds,
     fillerCount: metrics.fillerCount,

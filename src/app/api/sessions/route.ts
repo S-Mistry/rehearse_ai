@@ -8,6 +8,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     const session = await createSession({
       seniorityLevel: body.seniorityLevel,
+      targetRoleTitle: body.targetRoleTitle ?? null,
+      targetCompanyName: body.targetCompanyName ?? null,
       cvProfileId: body.cvProfileId ?? null,
       jdProfileId: body.jdProfileId ?? null,
     });
