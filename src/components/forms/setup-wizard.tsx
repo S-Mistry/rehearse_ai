@@ -6,6 +6,7 @@ import { ArrowRight, LoaderCircle, Mic2 } from "lucide-react";
 import { readApiError } from "@/lib/http/api-response";
 import { seniorityConfig } from "@/lib/rehearse/questions/question-bank";
 import type { SeniorityLevel, StoredDocumentProfile } from "@/types/rehearse";
+import { inferSeniorityFromJdDocument } from "@/lib/rehearse/seniority";
 import { cn } from "@/lib/utils";
 
 const seniorityLevels = Object.entries(seniorityConfig) as Array<
@@ -18,6 +19,8 @@ export function SetupWizard({
   documents: StoredDocumentProfile[];
 }) {
   const [seniorityLevel, setSeniorityLevel] = useState<SeniorityLevel>("senior");
+  const [targetRoleTitle, setTargetRoleTitle] = useState("");
+  const [targetCompanyName, setTargetCompanyName] = useState("");
   const [cvText, setCvText] = useState("");
   const [jdText, setJdText] = useState("");
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -29,24 +32,50 @@ export function SetupWizard({
   const router = useRouter();
   const cvDocuments = documents.filter((document) => document.kind === "cv");
   const jdDocuments = documents.filter((document) => document.kind === "jd");
+  const selectedJdDocument =
+    jdDocuments.find((document) => document.id === selectedJdId) ?? null;
+  const isUsingJdContext =
+    Boolean(selectedJdId) || Boolean(jdText.trim()) || Boolean(jdFile);
+  const inferredJdSeniority = inferSeniorityFromJdDocument(selectedJdDocument);
+  const requiresManualSeniority = !isUsingJdContext && Boolean(targetRoleTitle.trim());
 
   async function onSubmit() {
     setError(null);
 
     startTransition(async () => {
       try {
-        const cvProfileId =
-          selectedCvId || (await maybeCreateDocument("cv", cvText, cvFile));
-        const jdProfileId =
-          selectedJdId || (await maybeCreateDocument("jd", jdText, jdFile));
+        if (!isUsingJdContext && !targetRoleTitle.trim()) {
+          throw new Error("Add a job description or enter the target role before starting.");
+        }
+
+        const cvDocument =
+          (selectedCvId
+            ? cvDocuments.find((document) => document.id === selectedCvId) ?? null
+            : await maybeCreateDocument("cv", cvText, cvFile)) ?? null;
+        const jdDocument =
+          (selectedJdId
+            ? jdDocuments.find((document) => document.id === selectedJdId) ?? null
+            : await maybeCreateDocument("jd", jdText, jdFile)) ?? null;
+
+        const resolvedSeniority =
+          inferSeniorityFromJdDocument(jdDocument) ??
+          (requiresManualSeniority ? seniorityLevel : null);
+
+        if (!resolvedSeniority) {
+          throw new Error(
+            "We could not infer the role seniority from the job description. Enter the role manually and choose the seniority.",
+          );
+        }
 
         const sessionResponse = await fetch("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            seniorityLevel,
-            cvProfileId,
-            jdProfileId,
+            seniorityLevel: resolvedSeniority,
+            targetRoleTitle: isUsingJdContext ? null : targetRoleTitle.trim() || null,
+            targetCompanyName: targetCompanyName.trim() || null,
+            cvProfileId: cvDocument?.id ?? null,
+            jdProfileId: jdDocument?.id ?? null,
           }),
         });
 
@@ -90,39 +119,84 @@ export function SetupWizard({
             Build the rehearsal context before the first question.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-grey-3">
-            Seniority changes the content weighting and the expected scope. CV and JD are optional but help the feedback point to better evidence you already have.
+            If you provide a job description, the setup will infer the role and seniority automatically. Use manual role entry only when you do not have a JD.
           </p>
 
           <div className="mt-8 grid gap-4">
-            <div>
-              <p className="text-sm font-medium text-grey-1">1. Seniority</p>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                {seniorityLevels.map(([value, config]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setSeniorityLevel(value)}
-                    className={cn(
-                      "rounded-lg border p-4 text-left transition",
-                      seniorityLevel === value
-                        ? "border-coral/30 bg-coral/10"
-                        : "border-grey-5 bg-white/70 hover:border-coral/20",
-                    )}
-                  >
-                    <p className="text-sm font-medium text-grey-1">{config.label}</p>
-                    <p className="mt-1 text-xs uppercase tracking-[0.18em] text-grey-4">
-                      Content x{config.multiplier}
-                    </p>
-                    <p className="mt-3 text-sm leading-relaxed text-grey-3">
-                      {config.scopeHint}
-                    </p>
-                  </button>
-                ))}
+            <div className="rounded-lg border border-grey-5 bg-white/75 p-4">
+              <p className="text-sm font-medium text-grey-1">1. Interview context</p>
+              <p className="mt-2 text-sm leading-relaxed text-grey-3">
+                Add the target role only if you are not supplying a JD. Company is always optional.
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-medium text-grey-1">Target role</span>
+                  <input
+                    value={targetRoleTitle}
+                    onChange={(event) => setTargetRoleTitle(event.target.value)}
+                    disabled={isUsingJdContext}
+                    className="mt-3 w-full rounded-lg border border-grey-5 bg-white px-4 py-3 text-sm text-grey-1 outline-none transition focus:border-coral/40"
+                    placeholder={
+                      isUsingJdContext
+                        ? "Disabled while a JD is being used"
+                        : "Use this when you do not have a JD"
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-grey-1">Company</span>
+                  <input
+                    value={targetCompanyName}
+                    onChange={(event) => setTargetCompanyName(event.target.value)}
+                    className="mt-3 w-full rounded-lg border border-grey-5 bg-white px-4 py-3 text-sm text-grey-1 outline-none transition focus:border-coral/40"
+                    placeholder="Optional"
+                  />
+                </label>
               </div>
+              {isUsingJdContext ? (
+                <p className="mt-4 rounded-md border border-green/30 bg-green/20 px-4 py-3 text-sm text-grey-3">
+                  JD context detected. Role and seniority will be inferred from the job description.
+                  {inferredJdSeniority
+                    ? ` Current saved JD maps to ${seniorityConfig[inferredJdSeniority].label}.`
+                    : ""}
+                </p>
+              ) : null}
             </div>
 
+            {requiresManualSeniority ? (
+              <div>
+                <p className="text-sm font-medium text-grey-1">2. Seniority</p>
+                <p className="mt-2 text-sm leading-relaxed text-grey-3">
+                  Because you are entering the role manually, choose the seniority we should score against.
+                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {seniorityLevels.map(([value, config]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSeniorityLevel(value)}
+                      className={cn(
+                        "rounded-lg border p-4 text-left transition",
+                        seniorityLevel === value
+                          ? "border-coral/30 bg-coral/10"
+                          : "border-grey-5 bg-white/70 hover:border-coral/20",
+                      )}
+                    >
+                      <p className="text-sm font-medium text-grey-1">{config.label}</p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.18em] text-grey-4">
+                        Content x{config.multiplier}
+                      </p>
+                      <p className="mt-3 text-sm leading-relaxed text-grey-3">
+                        {config.scopeHint}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <DocumentPanel
-              title="2. Optional CV"
+              title="3. Optional CV"
               helper="Upload PDF or DOCX, or paste the text. Structured achievements will be used for leverage suggestions."
               text={cvText}
               onTextChange={setCvText}
@@ -133,8 +207,8 @@ export function SetupWizard({
             />
 
             <DocumentPanel
-              title="3. Optional JD"
-              helper="Upload the role description if you want the coaching margin to call out alignment gaps."
+              title="4. Optional JD"
+              helper="Upload the role description to infer the role, seniority, and more targeted interview context."
               text={jdText}
               onTextChange={setJdText}
               onFileChange={setJdFile}
@@ -151,13 +225,16 @@ export function SetupWizard({
           </p>
           <div className="mt-5 space-y-4 text-sm leading-relaxed text-grey-3">
             <p>
-              This MVP uses a controlled voice flow: question audio, your answer, evaluation, then a single nudge if needed.
+              The interviewer opens each round, asks the core question, and may ask one follow-up before the answer is scored.
             </p>
             <p>
-              Content and delivery are scored separately. The multiplier only affects content.
+              When a JD is present, role context and seniority come from the job description instead of asking you to choose them.
             </p>
             <p>
-              AI voice guidance can be spoken aloud. All spoken prompts also appear in text.
+              You will see live transcript updates when browser speech recognition is available. Voice practice still requires microphone access and server transcription.
+            </p>
+            <p>
+              Coaching is shown in plain English after each round instead of exposing internal scoring jargon.
             </p>
             <p>
               Raw answer audio is processed in-request and not stored by default.
@@ -290,5 +367,5 @@ async function maybeCreateDocument(
   }
 
   const payload = await response.json();
-  return payload.documentId as string;
+  return payload.document as StoredDocumentProfile;
 }

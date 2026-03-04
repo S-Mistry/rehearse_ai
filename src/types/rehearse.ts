@@ -61,6 +61,12 @@ export type ExtractionProvider = "openai:gpt-4.1-mini" | "fallback:local-parser"
 export type EvaluationProvider = "openai:gpt-4.1" | "fallback:heuristic";
 export type TranscriptProvider = "gpt-4o-transcribe" | "manual-transcript";
 export type ParseStatus = "parsed" | "warning" | "failed";
+export type ConversationSpeaker = "interviewer" | "candidate" | "system";
+export type RoleRelevanceAssessment =
+  | "direct_match"
+  | "transferable"
+  | "weak_match"
+  | "not_enough_context";
 
 export interface ApiErrorResponse {
   error: {
@@ -104,6 +110,26 @@ export interface EvaluationResult {
     fillerAssessment: string;
     conciseness: string;
   };
+  roleRelevance?: {
+    assessment: RoleRelevanceAssessment;
+    reasoning: string;
+    bridge: string | null;
+  };
+}
+
+export interface ConversationTurn {
+  id: string;
+  speaker: ConversationSpeaker;
+  text: string;
+  status?: "partial" | "final";
+  createdAt?: string;
+}
+
+export interface StarCoverage {
+  situation: boolean;
+  task: boolean;
+  action: boolean;
+  result: boolean;
 }
 
 export interface QuestionRubric {
@@ -125,12 +151,23 @@ export interface QuestionBankItem {
 }
 
 export interface AttemptFeedback {
+  verdict: string;
+  headline: string;
   strengths: string[];
+  improveNext: string[];
+  deliverySummary: string;
+  retryPrompt: string;
+  starCoverage: StarCoverage;
   missingElements: string[];
-  whatWouldElevateToFive: string;
-  structuralImprovement: string;
+  answerStarter?: string;
   cvLeverage?: string[];
-  spokenText: string;
+  roleRelevance?: {
+    assessment: RoleRelevanceAssessment;
+    headline: string;
+    detail: string;
+    bridge: string | null;
+  };
+  spokenRecap: string;
 }
 
 export interface TranscriptAttemptRecord {
@@ -139,6 +176,7 @@ export interface TranscriptAttemptRecord {
   attemptIndex: number;
   transcriptProvider: TranscriptProvider;
   transcriptText: string;
+  conversationTurns: ConversationTurn[];
   wordCount: number;
   durationSeconds: number;
   fillerCount: number;
@@ -237,6 +275,8 @@ export interface SessionRecord {
   status: SessionStatus;
   seniorityLevel: SeniorityLevel;
   seniorityMultiplier: number;
+  targetRoleTitle: string | null;
+  targetCompanyName: string | null;
   cvProfileId: string | null;
   jdProfileId: string | null;
   startedAt: string | null;
@@ -370,6 +410,18 @@ export const evaluationResultSchema = z.object({
     fillerAssessment: z.string(),
     conciseness: z.string(),
   }),
+  roleRelevance: z
+    .object({
+      assessment: z.union([
+        z.literal("direct_match"),
+        z.literal("transferable"),
+        z.literal("weak_match"),
+        z.literal("not_enough_context"),
+      ]),
+      reasoning: z.string(),
+      bridge: z.string().nullable(),
+    })
+    .optional(),
 });
 
 export interface EvaluationInput {

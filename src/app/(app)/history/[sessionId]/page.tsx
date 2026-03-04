@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getHistorySession } from "@/lib/rehearse/repositories/memory-store";
+import { interviewerName } from "@/lib/rehearse/interview/interviewer-persona";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +34,28 @@ export default async function HistoryDetailPage({
             {question.attempts.map((attempt) => (
               <div key={attempt.id} className="rounded-lg border border-grey-5 bg-white/70 p-4">
                 <p className="text-sm font-medium text-grey-1">Attempt {attempt.attemptIndex}</p>
-                <p className="mt-2 text-sm leading-relaxed text-grey-3">
-                  {attempt.transcriptText}
-                </p>
+                {attempt.conversationTurns.length > 0 ? (
+                  <div className="mt-3 space-y-3">
+                    {attempt.conversationTurns.map((turn) => (
+                      <div key={turn.id}>
+                        <p className="text-xs uppercase tracking-[0.18em] text-grey-4">
+                          {turn.speaker === "interviewer"
+                            ? interviewerName
+                            : turn.speaker === "candidate"
+                              ? "You"
+                              : "System"}
+                        </p>
+                        <p className="mt-1 text-sm leading-relaxed text-grey-3">
+                          {turn.text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm leading-relaxed text-grey-3">
+                    {attempt.transcriptText}
+                  </p>
+                )}
               </div>
             ))}
           </div>

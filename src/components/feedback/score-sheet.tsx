@@ -1,5 +1,4 @@
 import type { AttemptFeedback, EvaluationResult } from "@/types/rehearse";
-import { formatScore, titleCase } from "@/lib/utils";
 
 export function ScoreSheet({
   evaluation,
@@ -9,56 +8,88 @@ export function ScoreSheet({
   feedback?: AttemptFeedback | null;
 }) {
   return (
-    <div className="rounded-lg border border-grey-5 bg-white/75 p-4">
-      <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Score sheet</p>
-      {evaluation ? (
-        <>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-md border border-grey-5 bg-body/60 p-3">
-              <p className="text-xs text-grey-4">Raw content</p>
-              <p className="mt-2 font-serif text-3xl font-medium tracking-tight">
-                {evaluation.finalContentScoreAfterCaps}
-              </p>
-            </div>
-            <div className="rounded-md border border-grey-5 bg-body/60 p-3">
-              <p className="text-xs text-grey-4">Weighted</p>
-              <p className="mt-2 font-serif text-3xl font-medium tracking-tight">
-                {formatScore(evaluation.weightedContentScore)}
-              </p>
-            </div>
-            <div className="rounded-md border border-grey-5 bg-body/60 p-3">
-              <p className="text-xs text-grey-4">Delivery</p>
-              <p className="mt-2 text-2xl font-semibold">{evaluation.deliveryScore}</p>
-            </div>
-            <div className="rounded-md border border-grey-5 bg-body/60 p-3">
-              <p className="text-xs text-grey-4">Caps</p>
-              <p className="mt-2 text-sm text-grey-3">
-                {evaluation.capsApplied.length > 0
-                  ? evaluation.capsApplied.map((item) => titleCase(item)).join(", ")
-                  : "None"}
-              </p>
-            </div>
+    <div className="rounded-xl border border-grey-5 bg-white/75 p-4">
+      <p className="text-xs uppercase tracking-[0.22em] text-grey-4">How this answer landed</p>
+      {feedback ? (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-xl border border-grey-5 bg-body/50 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-grey-4">{feedback.verdict}</p>
+            <p className="mt-2 text-base font-medium text-grey-1">{feedback.headline}</p>
           </div>
-          <div className="mt-4 space-y-3 text-sm leading-relaxed text-grey-3">
-            <p>
-              <span className="font-medium text-grey-1">Strengths:</span>{" "}
-              {feedback?.strengths.join(", ") || evaluation.strengths.join(", ")}
-            </p>
-            <p>
-              <span className="font-medium text-grey-1">What raises it:</span>{" "}
-              {feedback?.whatWouldElevateToFive}
-            </p>
-            <p>
-              <span className="font-medium text-grey-1">Structure note:</span>{" "}
-              {feedback?.structuralImprovement}
+
+          <div>
+            <p className="text-sm font-medium text-grey-1">What worked</p>
+            <ul className="mt-2 space-y-2 text-sm leading-relaxed text-grey-3">
+              {feedback.strengths.map((item) => (
+                <li key={item}>- {item}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-grey-1">Improve Next</p>
+            <ul className="mt-2 space-y-2 text-sm leading-relaxed text-grey-3">
+              {feedback.improveNext.map((item) => (
+                <li key={item}>- {item}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-xl border border-grey-5 bg-white p-4">
+            <p className="text-sm font-medium text-grey-1">Delivery note</p>
+            <p className="mt-2 text-sm leading-relaxed text-grey-3">
+              {feedback.deliverySummary}
             </p>
           </div>
-        </>
+
+          {feedback.roleRelevance ? (
+            <div className="rounded-xl border border-grey-5 bg-white p-4">
+              <p className="text-sm font-medium text-grey-1">Role Relevance</p>
+              <p className="mt-2 text-sm font-medium text-grey-1">
+                {feedback.roleRelevance.headline}
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-grey-3">
+                {feedback.roleRelevance.detail}
+              </p>
+              {feedback.roleRelevance.bridge ? (
+                <p className="mt-2 text-sm leading-relaxed text-grey-3">
+                  {feedback.roleRelevance.bridge}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {feedback.answerStarter ? (
+            <div className="rounded-xl border border-coral/20 bg-coral/10 p-4">
+              <p className="text-sm font-medium text-grey-1">Try saying it more like this</p>
+              <p className="mt-2 text-sm leading-relaxed text-grey-3">
+                {feedback.answerStarter}
+              </p>
+            </div>
+          ) : null}
+
+          {feedback.cvLeverage?.length ? (
+            <div>
+              <p className="text-sm font-medium text-grey-1">Evidence you could pull in</p>
+              <ul className="mt-2 space-y-2 text-sm leading-relaxed text-grey-3">
+                {feedback.cvLeverage.map((item) => (
+                  <li key={item}>- {item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       ) : (
         <p className="mt-4 text-sm leading-relaxed text-grey-3">
-          Submit an answer to populate raw content, weighted content, delivery, and cap status here.
+          Finish the interview round to see a plain-English read on what worked, what is still missing, and how to improve the next attempt.
         </p>
       )}
+
+      {evaluation && !feedback ? (
+        <p className="mt-4 text-sm leading-relaxed text-grey-3">
+          Evaluation recorded.
+        </p>
+      ) : null}
     </div>
   );
 }

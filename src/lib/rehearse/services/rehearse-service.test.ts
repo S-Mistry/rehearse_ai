@@ -51,4 +51,19 @@ describe("rehearse-service fallbacks", () => {
     expect(result.modelName).toBe("heuristic");
     expect(result.evaluation.weightedContentMax).toBe(6);
   });
+
+  it("falls back to the supplied transcript when audio-first transcription is unavailable", async () => {
+    const { transcribePrimary, generateInterviewerSpeech } = await import(
+      "@/lib/rehearse/services/rehearse-service"
+    );
+
+    const transcription = await transcribePrimary(null, "typed fallback", true);
+    const speech = await generateInterviewerSpeech("Hi, I'm Lucy.", "intro");
+
+    expect(transcription).toEqual({
+      transcript: "typed fallback",
+      provider: "manual-transcript",
+    });
+    expect(speech).toBeNull();
+  });
 });

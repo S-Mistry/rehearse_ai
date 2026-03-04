@@ -7,6 +7,7 @@ export function buildEvaluatorPrompt(input: EvaluationInput) {
     "You are an expert behavioural interview evaluator trained in structured HR scoring.",
     "You must strictly evaluate according to the provided rubric and return valid JSON.",
     "Enforce score caps if required components are missing.",
+    "Assess role relevance advisory-only. Use direct_match when the example clearly maps to the role, transferable when the example is relevant but needs an explicit bridge, weak_match when the example feels too far away, and not_enough_context when role context is missing.",
     `Question: ${input.question.prompt}`,
     `Seniority: ${input.seniorityLevel}`,
     `Rubric signals for a top answer: ${input.question.rubric.score5Signals.join(", ")}`,

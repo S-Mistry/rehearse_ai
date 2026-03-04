@@ -11,6 +11,11 @@ import type {
 import type { CvProfileStructured, EvaluationInput, MissingComponent } from "@/types/rehearse";
 import { appMode } from "@/lib/env";
 import { getOpenAIClient } from "@/lib/openai/client";
+import {
+  getInterviewerSpeechInstructions,
+  interviewerVoice,
+  type InterviewerSpeechMode,
+} from "@/lib/rehearse/interview/interviewer-persona";
 import { moderateLocally } from "@/lib/rehearse/safety/moderation";
 import { extractCvLocally, extractJdLocally } from "@/lib/rehearse/parsers/structured-extraction";
 import { buildEvaluatorPrompt, EVALUATOR_PROMPT_VERSION } from "@/lib/rehearse/prompts/evaluator";
@@ -19,6 +24,7 @@ import { buildNudge } from "@/lib/rehearse/nudges/generate-nudge";
 import {
   applyCaps,
   buildAttemptFeedback,
+  buildRoleRelevance,
   detectCaps,
   detectMissingComponents,
   evaluateAnswerHeuristically,
@@ -30,6 +36,20 @@ import {
   jdProfileStructuredSchema,
 } from "@/types/rehearse";
 import { zodTextFormat } from "openai/helpers/zod";
+
+export type EvaluationModelName = "gpt-4.1" | "gpt-5-mini";
+
+export interface EvaluationModelRun {
+  evaluation: EvaluationResult;
+  feedback: ReturnType<typeof evaluateAnswerHeuristically>["feedback"];
+  modelName: EvaluationModelName;
+  promptVersion: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  } | null;
+}
 
 export async function moderateText(text: string): Promise<ModerationResult> {
   const local = moderateLocally(text);
@@ -61,8 +81,16 @@ export async function moderateText(text: string): Promise<ModerationResult> {
 export async function transcribePrimary(
   file: File | null,
   manualTranscript?: string,
+  preferAudio = false,
 ) {
-  if (manualTranscript?.trim()) {
+  if (preferAudio && !file && manualTranscript?.trim()) {
+    return {
+      transcript: manualTranscript.trim(),
+      provider: "manual-transcript" as TranscriptProvider,
+    };
+  }
+
+  if (!preferAudio && manualTranscript?.trim()) {
     return {
       transcript: manualTranscript.trim(),
       provider: "manual-transcript" as TranscriptProvider,
@@ -71,7 +99,7 @@ export async function transcribePrimary(
 
   if (!file || !appMode.hasOpenAI) {
     return {
-      transcript: "",
+      transcript: manualTranscript?.trim() ?? "",
       provider: "manual-transcript" as TranscriptProvider,
     };
   }
@@ -79,7 +107,7 @@ export async function transcribePrimary(
   const client = getOpenAIClient();
   if (!client) {
     return {
-      transcript: "",
+      transcript: manualTranscript?.trim() ?? "",
       provider: "manual-transcript" as TranscriptProvider,
     };
   }
@@ -88,6 +116,13 @@ export async function transcribePrimary(
     file,
     model: "gpt-4o-transcribe",
   });
+
+  if (!result.text.trim() && manualTranscript?.trim()) {
+    return {
+      transcript: manualTranscript.trim(),
+      provider: "manual-transcript" as TranscriptProvider,
+    };
+  }
 
   return {
     transcript: result.text.trim(),
@@ -181,20 +216,8 @@ export async function evaluateAnswer(
   }
 
   try {
-    const prompt = buildEvaluatorPrompt(input);
-    const response = await client.responses.parse({
-      model: "gpt-4.1",
-      input: [
-        { role: "system", content: "Return structured behavioural interview evaluation JSON only." },
-        { role: "user", content: prompt },
-      ],
-      text: {
-        format: zodTextFormat(evaluationResultSchema, "evaluation_result"),
-      },
-    });
-
-    const parsed = response.output_parsed;
-    if (!parsed) {
+    const result = await evaluateAnswerWithModel(input, "gpt-4.1");
+    if (!result) {
       const fallback = evaluateAnswerHeuristically(input);
       return {
         ...fallback,
@@ -204,15 +227,12 @@ export async function evaluateAnswer(
       };
     }
 
-    const evaluation = normalizeModelEvaluation(input, parsed);
-    const feedback = buildAttemptFeedback(evaluation, input);
-
     return {
-      evaluation,
-      feedback,
+      evaluation: result.evaluation,
+      feedback: result.feedback,
       provider: "openai:gpt-4.1",
-      modelName: "gpt-4.1",
-      promptVersion: EVALUATOR_PROMPT_VERSION,
+      modelName: result.modelName,
+      promptVersion: result.promptVersion,
     };
   } catch {
     const fallback = evaluateAnswerHeuristically(input);
@@ -223,6 +243,50 @@ export async function evaluateAnswer(
       promptVersion: EVALUATOR_PROMPT_VERSION,
     };
   }
+}
+
+export async function evaluateAnswerWithModel(
+  input: EvaluationInput,
+  modelName: EvaluationModelName,
+): Promise<EvaluationModelRun | null> {
+  const client = getOpenAIClient();
+  if (!client) {
+    return null;
+  }
+
+  const prompt = buildEvaluatorPrompt(input);
+  const response = await client.responses.parse({
+    model: modelName,
+    input: [
+      { role: "system", content: "Return structured behavioural interview evaluation JSON only." },
+      { role: "user", content: prompt },
+    ],
+    text: {
+      format: zodTextFormat(evaluationResultSchema, "evaluation_result"),
+    },
+  });
+
+  const parsed = response.output_parsed;
+  if (!parsed) {
+    return null;
+  }
+
+  const evaluation = normalizeModelEvaluation(input, parsed);
+  const feedback = buildAttemptFeedback(evaluation, input);
+
+  return {
+    evaluation,
+    feedback,
+    modelName,
+    promptVersion: EVALUATOR_PROMPT_VERSION,
+    usage: response.usage
+      ? {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+          totalTokens: response.usage.total_tokens,
+        }
+      : null,
+  };
 }
 
 export async function extractCvProfile(rawText: string): Promise<{
@@ -321,7 +385,10 @@ export async function extractJdProfile(rawText: string): Promise<{
   }
 }
 
-export async function generateSpeech(text: string): Promise<SpeechPayload | null> {
+export async function generateInterviewerSpeech(
+  text: string,
+  mode: InterviewerSpeechMode,
+): Promise<SpeechPayload | null> {
   if (!appMode.hasOpenAI) {
     return null;
   }
@@ -333,11 +400,10 @@ export async function generateSpeech(text: string): Promise<SpeechPayload | null
 
   const response = await client.audio.speech.create({
     model: "gpt-4o-mini-tts",
-    voice: "sage",
+    voice: interviewerVoice,
     response_format: "mp3",
     input: text,
-    instructions:
-      "Read this like a calm, experienced interview coach giving measured feedback.",
+    instructions: getInterviewerSpeechInstructions(mode),
   });
 
   const arrayBuffer = await response.arrayBuffer();
@@ -370,6 +436,7 @@ function normalizeModelEvaluation(
     missingComponents,
     capsApplied,
     nudges: missingComponents.length > 0 ? [buildNudge(input.question, parsed.strengths, missingComponents)] : [],
+    roleRelevance: buildRoleRelevance(input, parsed.roleRelevance),
     finalContentScoreAfterCaps,
     weightedContentScore: roundWeightedScore(
       finalContentScoreAfterCaps * input.seniorityMultiplier,

@@ -23,11 +23,11 @@ export default async function SessionSummaryPage({
         <div className="mt-4 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
             <h1 className="font-serif text-4xl font-medium tracking-tight md:text-5xl">
-              Weighted content {formatScore(bundle.aggregate.averageWeightedContent)} /{" "}
-              {formatScore(bundle.aggregate.averageWeightedMax)}
+              Interview-ready coverage across {bundle.aggregate.completedQuestions} of{" "}
+              {bundle.aggregate.totalQuestions} questions
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-relaxed text-grey-3">
-              Delivery averaged {formatScore(bundle.aggregate.averageDelivery)}. Strongest question:{" "}
+              Delivery averaged {formatScore(bundle.aggregate.averageDelivery)} / 5. Strongest question:{" "}
               {bundle.aggregate.strongestQuestionCode ?? "—"}. Weakest question:{" "}
               {bundle.aggregate.weakestQuestionCode ?? "—"}.
             </p>
@@ -71,32 +71,40 @@ export default async function SessionSummaryPage({
             </div>
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div className="rounded-lg border border-grey-5 bg-white/70 p-4">
-                <p className="text-xs text-grey-4">Raw content</p>
-                <p className="mt-2 font-serif text-3xl font-medium tracking-tight">
-                  {question.finalContentCapped ?? "—"}
+                <p className="text-xs text-grey-4">Verdict</p>
+                <p className="mt-2 text-xl font-semibold text-grey-1">
+                  {question.finalFeedback?.verdict ?? "Not scored"}
                 </p>
               </div>
               <div className="rounded-lg border border-grey-5 bg-white/70 p-4">
-                <p className="text-xs text-grey-4">Weighted content</p>
-                <p className="mt-2 font-serif text-3xl font-medium tracking-tight">
-                  {formatScore(question.finalContentWeighted)}
-                </p>
+                <p className="text-xs text-grey-4">Attempts</p>
+                <p className="mt-2 text-2xl font-semibold">{question.attemptCount}</p>
               </div>
               <div className="rounded-lg border border-grey-5 bg-white/70 p-4">
                 <p className="text-xs text-grey-4">Delivery</p>
-                <p className="mt-2 text-2xl font-semibold">{question.deliveryScore ?? "—"}</p>
+                <p className="mt-2 text-2xl font-semibold">
+                  {question.deliveryScore != null ? `${question.deliveryScore}/5` : "—"}
+                </p>
               </div>
             </div>
             {question.finalFeedback ? (
               <div className="mt-4 space-y-2 text-sm leading-relaxed text-grey-3">
                 <p>
-                  <span className="font-medium text-grey-1">Missing:</span>{" "}
-                  {question.finalFeedback.missingElements.join(", ") || "None"}
+                  <span className="font-medium text-grey-1">What worked:</span>{" "}
+                  {question.finalFeedback.strengths.join(", ") || "—"}
                 </p>
                 <p>
-                  <span className="font-medium text-grey-1">Best improvement note:</span>{" "}
-                  {question.finalFeedback.whatWouldElevateToFive}
+                  <span className="font-medium text-grey-1">Improve Next:</span>{" "}
+                  {question.finalFeedback.improveNext.join(", ") || "None"}
                 </p>
+                {question.finalFeedback.roleRelevance ? (
+                  <p>
+                    <span className="font-medium text-grey-1">Role Relevance:</span>{" "}
+                    {question.finalFeedback.roleRelevance.headline}{" "}
+                    {question.finalFeedback.roleRelevance.bridge ??
+                      question.finalFeedback.roleRelevance.detail}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>

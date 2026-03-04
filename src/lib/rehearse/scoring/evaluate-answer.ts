@@ -70,6 +70,7 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
           ? "Length is close to the ideal interview window."
           : "The answer is running long and should be tightened.",
     },
+    roleRelevance: buildRoleRelevance(input),
   };
 
   const feedback = buildAttemptFeedback(evaluation, input);
@@ -202,26 +203,414 @@ export function buildAttemptFeedback(
     input.cvSummary?.quantifiedAchievements?.slice(0, 2).map((achievement) => {
       return `You could have referenced ${achievement.description}.`;
     }) ?? [];
+  const strengths =
+    evaluation.strengths.length > 0
+      ? evaluation.strengths.map(toCandidateStrength)
+      : ["You kept the answer concise enough to build on."];
+  const improveNext = buildImproveNext(evaluation, input);
+  const verdict = describeVerdict(evaluation.finalContentScoreAfterCaps);
+  const headline = buildHeadline(evaluation);
+  const deliverySummary = buildDeliverySummary(evaluation);
+  const retryPrompt = buildRetryPrompt(evaluation, improveNext);
+  const answerStarter = buildAnswerStarter(evaluation.missingComponents, input.question.code);
+  const missingElements = evaluation.missingComponents.map(formatMissingComponent);
+  const roleRelevance = buildRoleRelevanceFeedback(evaluation.roleRelevance);
 
   return {
-    strengths: evaluation.strengths,
-    missingElements: evaluation.missingComponents.map((component) =>
-      component.replaceAll("_", " "),
-    ),
-    whatWouldElevateToFive:
-      evaluation.missingComponents.length === 0
-        ? "Keep the same structure and tighten delivery to land even more cleanly."
-        : `Add ${evaluation.missingComponents
-            .slice(0, 3)
-            .map((item) => item.replaceAll("_", " "))
-            .join(", ")} to close the rubric gaps.`,
-    structuralImprovement:
-      "Lead with the situation and task in one sentence each, spend most of the answer on your actions, and close with a metric-backed result plus reflection.",
+    verdict,
+    headline,
+    strengths,
+    improveNext,
+    deliverySummary,
+    retryPrompt,
+    starCoverage: {
+      situation: !evaluation.missingComponents.includes("situation"),
+      task: !evaluation.missingComponents.includes("task"),
+      action: !evaluation.missingComponents.includes("action"),
+      result: !evaluation.missingComponents.includes("result"),
+    },
+    missingElements,
+    answerStarter,
     cvLeverage: leverage.length > 0 ? leverage : undefined,
-    spokenText:
-      evaluation.nudges[0] ??
-      `Final score recorded. Content ${evaluation.finalContentScoreAfterCaps} out of 5, delivery ${evaluation.deliveryScore} out of 5.`,
+    roleRelevance,
+    spokenRecap: buildSpokenRecap(headline, improveNext, roleRelevance),
   };
+}
+
+function describeVerdict(score: EvaluationResult["finalContentScoreAfterCaps"]) {
+  if (score >= 4) {
+    return "Strong answer";
+  }
+  if (score === 3) {
+    return "Solid foundation";
+  }
+  return "Needs more detail";
+}
+
+function buildHeadline(evaluation: EvaluationResult) {
+  if (evaluation.finalContentScoreAfterCaps >= 4) {
+    return "This answer lands well and feels interview-ready.";
+  }
+  if (evaluation.missingComponents.includes("result")) {
+    return "The story needs a clearer result so the answer actually lands.";
+  }
+  if (evaluation.missingComponents.includes("action")) {
+    return "I can tell what the project was, but not enough about what you actually did.";
+  }
+  if (evaluation.missingComponents.includes("situation")) {
+    return "The answer starts too abruptly and needs more setup.";
+  }
+  return "There is a good answer here, but it still feels too thin to be convincing.";
+}
+
+function buildImproveNext(
+  evaluation: EvaluationResult,
+  input: EvaluationInput,
+) {
+  const suggestions = [
+    ...evaluation.missingComponents.map((component) => {
+      switch (component) {
+        case "result":
+          return "State the result and what changed because of your work.";
+        case "metric":
+          return "Add a measurable outcome or a before-and-after indicator.";
+        case "ownership":
+          return "Make your own contribution unmistakably clear.";
+        case "situation":
+          return "Open with the situation so the challenge feels real.";
+        case "task":
+          return "Say what you were personally responsible for.";
+        case "action":
+          return "Spend more time on the actions you took.";
+        case "reflection":
+          return "Close with what you learned or would repeat next time.";
+        case "tradeoff":
+          return "Explain the trade-off you had to navigate.";
+        case "resistance":
+          return "Show the resistance or pushback you had to work through.";
+        case "strategic_layer":
+          return "Connect the story to the broader team or business impact.";
+        default:
+          return "Add more concrete detail.";
+      }
+    }),
+    ...buildDeliveryImproveNext(input),
+  ];
+
+  const unique = Array.from(new Set(suggestions));
+  return unique.length > 0
+    ? unique
+    : ["Keep this structure and make the final impact even more specific."];
+}
+
+function buildDeliveryImproveNext(input: EvaluationInput) {
+  const suggestions: string[] = [];
+  if (input.deliveryMetrics.wordsPerMinute > 175) {
+    suggestions.push("Slow the pacing slightly so the structure is easier to follow.");
+  } else if (input.deliveryMetrics.wordsPerMinute > 0 && input.deliveryMetrics.wordsPerMinute < 110) {
+    suggestions.push("Pick up the pacing slightly so the answer keeps its momentum.");
+  }
+
+  if (input.deliveryMetrics.fillerRate >= 3) {
+    suggestions.push("Cut filler words so the answer sounds more confident.");
+  }
+
+  if (input.deliveryMetrics.durationSeconds > 180) {
+    suggestions.push("Tighten the answer so it lands inside a focused two-minute arc.");
+  }
+
+  if (input.deliveryMetrics.longPauseCount >= 2) {
+    suggestions.push("Reduce long pauses so the answer feels more deliberate than hesitant.");
+  }
+
+  if (input.deliveryMetrics.fragmentationScore >= 4) {
+    suggestions.push("Use clearer signposting so each part of the answer connects cleanly.");
+  }
+
+  return suggestions;
+}
+
+function buildRetryPrompt(
+  evaluation: EvaluationResult,
+  improveNext: string[],
+) {
+  if (improveNext.length === 0) {
+    return "Try again with the same structure and make the final impact even more concrete.";
+  }
+
+  if (evaluation.missingComponents.includes("result")) {
+    return "Try again and make the result and what changed because of your work unmistakably clear.";
+  }
+
+  if (evaluation.missingComponents.includes("action")) {
+    return "Try again and spend more time on the actions you personally drove.";
+  }
+
+  if (evaluation.missingComponents.includes("situation")) {
+    return "Try again and anchor the answer in the situation before you move into the action.";
+  }
+
+  return `Try again and focus on this next: ${improveNext[0]}`;
+}
+
+function buildSpokenRecap(
+  headline: string,
+  improveNext: string[],
+  roleRelevance?: AttemptFeedback["roleRelevance"],
+) {
+  if (improveNext.length === 0 && !roleRelevance) {
+    return "Strong answer. Keep that structure and sharpen the delivery.";
+  }
+
+  const coachingLine =
+    improveNext.length > 0
+      ? `Improve next: ${improveNext.map(stripTrailingPeriod).join("; ")}.`
+      : "";
+  const relevanceLine = roleRelevance
+    ? `Role relevance: ${roleRelevance.headline} ${roleRelevance.bridge ?? roleRelevance.detail}`
+    : "";
+
+  return [headline, coachingLine, relevanceLine].filter(Boolean).join(" ").trim();
+}
+
+function buildRoleRelevanceFeedback(
+  roleRelevance?: EvaluationResult["roleRelevance"],
+) {
+  if (!roleRelevance || roleRelevance.assessment === "not_enough_context") {
+    return undefined;
+  }
+
+  switch (roleRelevance.assessment) {
+    case "direct_match":
+      return {
+        assessment: roleRelevance.assessment,
+        headline: "The example feels directly relevant to the role.",
+        detail: roleRelevance.reasoning,
+        bridge: roleRelevance.bridge,
+      };
+    case "transferable":
+      return {
+        assessment: roleRelevance.assessment,
+        headline: "The example is transferable, but the role link needs to be explicit.",
+        detail: roleRelevance.reasoning,
+        bridge: roleRelevance.bridge,
+      };
+    case "weak_match":
+      return {
+        assessment: roleRelevance.assessment,
+        headline: "The example feels too far from the role as told.",
+        detail: roleRelevance.reasoning,
+        bridge: roleRelevance.bridge,
+      };
+    default:
+      return undefined;
+  }
+}
+
+export function buildRoleRelevance(
+  input: EvaluationInput,
+  candidate?: EvaluationResult["roleRelevance"],
+): NonNullable<EvaluationResult["roleRelevance"]> {
+  const fallback = inferRoleRelevanceHeuristically(input);
+  if (fallback.assessment === "not_enough_context") {
+    return fallback;
+  }
+
+  if (!candidate) {
+    return fallback;
+  }
+
+  const reasoning = candidate.reasoning.trim();
+  const bridge = candidate.bridge?.trim() || null;
+  if (!reasoning) {
+    return fallback;
+  }
+
+  return {
+    assessment: candidate.assessment,
+    reasoning,
+    bridge,
+  };
+}
+
+function inferRoleRelevanceHeuristically(
+  input: EvaluationInput,
+): NonNullable<EvaluationResult["roleRelevance"]> {
+  const priorities = collectRolePriorities(input);
+  if (priorities.length === 0) {
+    return {
+      assessment: "not_enough_context",
+      reasoning: "There is not enough role context to judge how closely this example maps to the target role.",
+      bridge: null,
+    };
+  }
+
+  const transcriptTerms = extractSignalTerms([input.transcript]);
+  const matchedPriorities = priorities.filter((priority) =>
+    Array.from(extractSignalTerms([priority])).some((term) => transcriptTerms.has(term)),
+  );
+  const transferableSignals = Array.from(transcriptTerms).filter((term) =>
+    transferableRoleTerms.has(term),
+  );
+  const focus = priorities.slice(0, 2).join(" and ");
+
+  if (matchedPriorities.length >= 2) {
+    return {
+      assessment: "direct_match",
+      reasoning: `This example already speaks to ${matchedPriorities.slice(0, 2).join(" and ")} in the role.`,
+      bridge: null,
+    };
+  }
+
+  if (matchedPriorities.length >= 1 || transferableSignals.length >= 2) {
+    return {
+      assessment: "transferable",
+      reasoning: `The story shows transferable strengths, but you need to connect them more explicitly to ${focus}.`,
+      bridge: `Bridge it back by naming how this example proves you can handle ${focus} in this role.`,
+    };
+  }
+
+  return {
+    assessment: "weak_match",
+    reasoning: `The example shows some capability, but it does not yet sound close enough to the core priorities of ${focus}.`,
+    bridge: `Choose a closer example or explicitly tie this one to ${focus}.`,
+  };
+}
+
+function collectRolePriorities(input: EvaluationInput) {
+  const jd = input.jdSummary;
+  if (!jd) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      [...jd.coreCompetencies, ...jd.performanceKeywords]
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+}
+
+function extractSignalTerms(values: string[]) {
+  const terms = new Set<string>();
+  for (const value of values) {
+    for (const term of value.toLowerCase().split(/[^a-z0-9]+/)) {
+      if (term.length < 4 || roleStopWords.has(term)) {
+        continue;
+      }
+      terms.add(term);
+    }
+  }
+
+  return terms;
+}
+
+function stripTrailingPeriod(value: string) {
+  return value.replace(/[.!\s]+$/g, "");
+}
+
+function buildDeliverySummary(evaluation: EvaluationResult) {
+  return [
+    evaluation.deliveryReasoning.clarity,
+    evaluation.deliveryReasoning.pacing,
+    evaluation.deliveryReasoning.fillerAssessment,
+    evaluation.deliveryReasoning.conciseness,
+  ].join(" ");
+}
+
+const roleStopWords = new Set([
+  "about",
+  "across",
+  "along",
+  "also",
+  "because",
+  "being",
+  "core",
+  "from",
+  "into",
+  "needs",
+  "role",
+  "team",
+  "that",
+  "this",
+  "with",
+]);
+
+const transferableRoleTerms = new Set([
+  "aligned",
+  "analysis",
+  "built",
+  "change",
+  "coach",
+  "coached",
+  "customer",
+  "decision",
+  "delivered",
+  "designed",
+  "execution",
+  "improved",
+  "launched",
+  "leader",
+  "leadership",
+  "managed",
+  "mentor",
+  "mentored",
+  "operational",
+  "prioritized",
+  "roadmap",
+  "stakeholder",
+  "strategy",
+]);
+
+function buildAnswerStarter(missing: MissingComponent[], questionCode: string) {
+  if (missing.length === 0) {
+    return "Start with one sentence of context, spend most of the answer on your actions, and close on the result.";
+  }
+
+  if (missing.includes("situation") || missing.includes("task")) {
+    return questionCode === "Q10"
+      ? "Open with the strongest reason you match this role, then support it with evidence."
+      : "Start with: In my role, I was responsible for..., and the challenge was...";
+  }
+
+  if (missing.includes("action")) {
+    return "Then continue with: I focused on three things. First..., second..., and third...";
+  }
+
+  if (missing.includes("result") || missing.includes("metric")) {
+    return "Close with: As a result, we changed X to Y, which meant...";
+  }
+
+  return "Reshape the answer into context, your actions, and the result you produced.";
+}
+
+function toCandidateStrength(value: string) {
+  switch (value) {
+    case "explicit ownership":
+      return "You sound like the person who drove the work.";
+    case "quantified impact":
+      return "You included measurable impact.";
+    case "trade-off clarity":
+      return "You explained the trade-off behind the decision.";
+    case "useful reflection":
+      return "You showed what you learned from the experience.";
+    case "broader strategic framing":
+      return "You connected the story to the wider business context.";
+    case "room to anchor the answer in a real CV achievement":
+      return "You have strong experience to pull in from your background.";
+    default:
+      return value;
+  }
+}
+
+function formatMissingComponent(value: MissingComponent) {
+  switch (value) {
+    case "strategic_layer":
+      return "broader business impact";
+    default:
+      return value.replaceAll("_", " ");
+  }
 }
 
 function describeStructure(missing: MissingComponent[]) {
