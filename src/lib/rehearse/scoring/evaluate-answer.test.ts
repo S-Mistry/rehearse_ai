@@ -62,7 +62,127 @@ describe("evaluate-answer scoring", () => {
     expect(result.evaluation.capsApplied).toContain("short_answer_cap");
     expect(result.feedback.verdict).toBe("Needs more detail");
     expect(result.feedback.improveNext.length).toBeGreaterThan(0);
-    expect(result.feedback.starCoverage.result).toBe(false);
+    expect(result.feedback.starCoverage.result).toBe("missing");
+  });
+
+  it("marks the screenshot-style vague answer as weak for situation and action", () => {
+    const question = questionBank.find((item) => item.code === "Q1");
+    if (!question) {
+      throw new Error("Expected Q1 in the question bank.");
+    }
+
+    const transcript =
+      "I led a challenging project once upon a time when I was in a team that had challenges and I managed to help them solve it.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "senior",
+      seniorityMultiplier: seniorityConfig.senior.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 21),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.starAssessment.situation.status).toBe("weak");
+    expect(result.evaluation.starAssessment.task.status).toBe("missing");
+    expect(result.evaluation.starAssessment.action.status).toBe("weak");
+    expect(result.evaluation.starAssessment.result.status).toBe("missing");
+    expect(result.feedback.starCoverage.situation).toBe("weak");
+    expect(result.feedback.starCoverage.action).toBe("weak");
+  });
+
+  it("treats mention-only action as weak instead of covered", () => {
+    const question = questionBank.find((item) => item.code === "Q1");
+    if (!question) {
+      throw new Error("Expected Q1 in the question bank.");
+    }
+
+    const transcript = "When the project slipped, I led it.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "senior",
+      seniorityMultiplier: seniorityConfig.senior.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 18),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.starAssessment.action.status).toBe("weak");
+  });
+
+  it("still marks concise but concrete STAR answers as covered", () => {
+    const question = questionBank.find((item) => item.code === "Q1");
+    if (!question) {
+      throw new Error("Expected Q1 in the question bank.");
+    }
+
+    const transcript =
+      "When a vendor delay put our onboarding launch at risk, I was responsible for recovering the timeline without cutting compliance. I mapped the critical path, cut two low-value features, and ran daily decisions with engineering and support. As a result, we launched on time, onboarding dropped from seven days to five, and support tickets fell the next week.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "senior",
+      seniorityMultiplier: seniorityConfig.senior.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 85),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.feedback.starCoverage).toEqual({
+      situation: "covered",
+      task: "covered",
+      action: "covered",
+      result: "covered",
+    });
+  });
+
+  it("allows qualitative results to count while still requiring metrics separately", () => {
+    const question = questionBank.find((item) => item.code === "Q7");
+    if (!question) {
+      throw new Error("Expected Q7 in the question bank.");
+    }
+
+    const transcript =
+      "When handoffs kept breaking between support and operations, I was responsible for fixing the process. I introduced a single intake checklist and reviewed the queue with both teams each morning. As a result, both teams adopted the checklist and complaints stopped showing up in the weekly review.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "mid_ic",
+      seniorityMultiplier: seniorityConfig.mid_ic.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 70),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.starAssessment.result.status).toBe("covered");
+    expect(result.evaluation.missingComponents).toContain("metric");
+  });
+
+  it("prevents very short answers from turning any STAR section green", () => {
+    const question = questionBank.find((item) => item.code === "Q1");
+    if (!question) {
+      throw new Error("Expected Q1 in the question bank.");
+    }
+
+    const transcript =
+      "When launch slipped, I owned recovery, mapped workstreams, aligned engineering, and shipped on time.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "senior",
+      seniorityMultiplier: seniorityConfig.senior.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 20),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(Object.values(result.feedback.starCoverage)).not.toContain("covered");
   });
 
   it("returns sentence-case improvement items and includes delivery coaching", () => {

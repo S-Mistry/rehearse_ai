@@ -26,8 +26,9 @@ import {
   buildAttemptFeedback,
   buildRoleRelevance,
   detectCaps,
-  detectMissingComponents,
+  deriveMissingComponents,
   evaluateAnswerHeuristically,
+  normalizeStarAssessment,
   roundWeightedScore,
 } from "@/lib/rehearse/scoring/evaluate-answer";
 import {
@@ -422,9 +423,12 @@ function normalizeModelEvaluation(
   parsed: EvaluationResult,
 ): EvaluationResult {
   const normalizedTranscript = input.transcript.trim().toLowerCase();
-  const heuristicMissing = detectMissingComponents(normalizedTranscript, input.question.code);
-  const missingComponents =
-    parsed.missingComponents.length > 0 ? parsed.missingComponents : heuristicMissing;
+  const starAssessment = normalizeStarAssessment(
+    parsed.starAssessment,
+    input.transcript,
+    input.question.code,
+  );
+  const missingComponents = deriveMissingComponents(starAssessment, input.question.code);
   const capsApplied = detectCaps(input, missingComponents, normalizedTranscript);
   const finalContentScoreAfterCaps = normalizeTopScore(
     applyCaps(parsed.contentScoreRaw, capsApplied),
@@ -433,6 +437,7 @@ function normalizeModelEvaluation(
 
   return {
     ...parsed,
+    starAssessment,
     missingComponents,
     capsApplied,
     nudges: missingComponents.length > 0 ? [buildNudge(input.question, parsed.strengths, missingComponents)] : [],

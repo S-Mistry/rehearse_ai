@@ -62,6 +62,8 @@ export type EvaluationProvider = "openai:gpt-4.1" | "fallback:heuristic";
 export type TranscriptProvider = "gpt-4o-transcribe" | "manual-transcript";
 export type ParseStatus = "parsed" | "warning" | "failed";
 export type ConversationSpeaker = "interviewer" | "candidate" | "system";
+export type StarSection = "situation" | "task" | "action" | "result";
+export type StarSectionStatus = "missing" | "weak" | "covered";
 export type RoleRelevanceAssessment =
   | "direct_match"
   | "transferable"
@@ -93,6 +95,7 @@ export interface EvaluationResult {
   weightedContentScore: number;
   weightedContentMax: number;
   deliveryScore: 1 | 2 | 3 | 4 | 5;
+  starAssessment: Record<StarSection, StarSectionAssessment>;
   missingComponents: MissingComponent[];
   strengths: string[];
   nudges: string[];
@@ -125,11 +128,18 @@ export interface ConversationTurn {
   createdAt?: string;
 }
 
+export interface StarSectionAssessment {
+  status: StarSectionStatus;
+  reason: string;
+  evidence: string | null;
+  qualityScore: 0 | 1 | 2;
+}
+
 export interface StarCoverage {
-  situation: boolean;
-  task: boolean;
-  action: boolean;
-  result: boolean;
+  situation: StarSectionStatus;
+  task: StarSectionStatus;
+  action: StarSectionStatus;
+  result: StarSectionStatus;
 }
 
 export interface QuestionRubric {
@@ -338,6 +348,15 @@ export const scoreCapSchema = z.enum([
   "short_answer_cap",
 ]);
 
+export const starSectionStatusSchema = z.enum(["missing", "weak", "covered"]);
+
+export const starSectionAssessmentSchema = z.object({
+  status: starSectionStatusSchema,
+  reason: z.string(),
+  evidence: z.string().nullable(),
+  qualityScore: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+});
+
 export const cvRoleSchema = z.object({
   title: z.string(),
   seniorityLevelEstimate: z.string(),
@@ -393,6 +412,12 @@ export const evaluationResultSchema = z.object({
     z.literal(4),
     z.literal(5),
   ]),
+  starAssessment: z.object({
+    situation: starSectionAssessmentSchema,
+    task: starSectionAssessmentSchema,
+    action: starSectionAssessmentSchema,
+    result: starSectionAssessmentSchema,
+  }),
   missingComponents: z.array(missingComponentSchema),
   strengths: z.array(z.string()),
   nudges: z.array(z.string()),

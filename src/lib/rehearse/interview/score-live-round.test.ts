@@ -4,6 +4,7 @@ import type {
   EvaluationResult,
   SessionBundle,
   SessionQuestionRecord,
+  StarSectionAssessment,
 } from "@/types/rehearse";
 
 const submitQuestionAttempt = vi.fn();
@@ -29,6 +30,41 @@ vi.mock("@/lib/rehearse/services/rehearse-service", () => ({
   generateInterviewerSpeech,
 }));
 
+function buildStarAssessment(
+  overrides: Partial<Record<"situation" | "task" | "action" | "result", Partial<StarSectionAssessment>>> = {},
+) {
+  return {
+    situation: {
+      status: "covered",
+      reason: "Clear context.",
+      evidence: "When the migration slipped...",
+      qualityScore: 2,
+      ...overrides.situation,
+    },
+    task: {
+      status: "covered",
+      reason: "Clear ownership.",
+      evidence: "I was responsible for recovering the launch.",
+      qualityScore: 2,
+      ...overrides.task,
+    },
+    action: {
+      status: "covered",
+      reason: "Concrete actions.",
+      evidence: "I mapped the critical path and aligned engineering.",
+      qualityScore: 2,
+      ...overrides.action,
+    },
+    result: {
+      status: "missing",
+      reason: "No result yet.",
+      evidence: null,
+      qualityScore: 0,
+      ...overrides.result,
+    },
+  } satisfies EvaluationResult["starAssessment"];
+}
+
 function buildEvaluation(
   overrides: Partial<EvaluationResult> = {},
 ): EvaluationResult {
@@ -38,6 +74,7 @@ function buildEvaluation(
     weightedContentScore: 3.6,
     weightedContentMax: 6,
     deliveryScore: 3,
+    starAssessment: buildStarAssessment(),
     missingComponents: ["result"],
     strengths: ["Clear ownership"],
     nudges: ["Close with the measurable result."],
@@ -73,10 +110,10 @@ function buildFeedback(overrides: Partial<AttemptFeedback> = {}): AttemptFeedbac
     deliverySummary: "Delivery was clear.",
     retryPrompt: "Close with the metric and final outcome.",
     starCoverage: {
-      situation: true,
-      task: true,
-      action: true,
-      result: false,
+      situation: "covered",
+      task: "covered",
+      action: "covered",
+      result: "missing",
     },
     missingElements: ["result"],
     spokenRecap: "Solid foundation. Close with the metric and final outcome.",

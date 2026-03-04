@@ -22,7 +22,7 @@ export function StarCueStrip({
           <p className="text-xs uppercase tracking-[0.22em] text-grey-4">STAR coverage</p>
           <p className="mt-2 text-sm text-grey-3">
             {feedback
-              ? "Covered sections are highlighted. Missing sections are what to fix next."
+              ? "Green means strong enough. Amber means mentioned but too thin. Gray means missing."
               : "Once the round is scored, this shows which parts of your story were actually present."}
           </p>
         </div>
@@ -31,20 +31,22 @@ export function StarCueStrip({
 
       <div className="mt-5 grid grid-cols-4 gap-3 items-stretch">
         {starOrder.map((item) => {
-          const covered = feedback?.starCoverage[item] ?? false;
+          const status = normalizeStarStatus(feedback?.starCoverage[item]);
           return (
             <div
               key={item}
               className={cn(
                 "flex min-h-[112px] flex-col items-center justify-center rounded-2xl border px-3 py-4 text-center",
-                covered
+                status === "covered"
                   ? "border-green/40 bg-green/20 text-grey-1"
-                  : "border-grey-5 bg-body/50 text-grey-3",
+                  : status === "weak"
+                    ? "border-coral/35 bg-coral/10 text-grey-1"
+                    : "border-grey-5 bg-body/50 text-grey-3",
               )}
             >
               <p className="text-lg font-semibold uppercase">{item[0]}</p>
               <p className="mt-2 text-[11px] uppercase tracking-[0.18em]">
-                {covered ? "Covered" : "Missing"}
+                {status === "covered" ? "Covered" : status === "weak" ? "Thin" : "Missing"}
               </p>
             </div>
           );
@@ -52,4 +54,16 @@ export function StarCueStrip({
       </div>
     </div>
   );
+}
+
+function normalizeStarStatus(value: AttemptFeedback["starCoverage"][keyof AttemptFeedback["starCoverage"]] | boolean | undefined) {
+  if (value === true) {
+    return "covered";
+  }
+
+  if (value === false || value === undefined) {
+    return "missing";
+  }
+
+  return value;
 }

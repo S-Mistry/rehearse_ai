@@ -5,6 +5,7 @@ import type {
   MissingComponent,
   QuestionBankItem,
   SessionBundle,
+  StarSection,
 } from "@/types/rehearse";
 import { buildInterviewerIntro } from "@/lib/rehearse/interview/interviewer-persona";
 
@@ -21,17 +22,21 @@ const followUpPrompts: Record<MissingComponent, string> = {
   strategic_layer: "How did this affect the wider team, customer, or business?",
 };
 
-const followUpPriority: MissingComponent[] = [
-  "result",
-  "metric",
-  "ownership",
-  "action",
-  "situation",
-  "task",
-  "tradeoff",
-  "reflection",
-  "resistance",
-  "strategic_layer",
+type FollowUpPriority =
+  | { kind: "star"; value: StarSection }
+  | { kind: "missing"; value: MissingComponent };
+
+const followUpPriority: FollowUpPriority[] = [
+  { kind: "star", value: "result" },
+  { kind: "star", value: "action" },
+  { kind: "star", value: "situation" },
+  { kind: "star", value: "task" },
+  { kind: "missing", value: "metric" },
+  { kind: "missing", value: "ownership" },
+  { kind: "missing", value: "tradeoff" },
+  { kind: "missing", value: "reflection" },
+  { kind: "missing", value: "resistance" },
+  { kind: "missing", value: "strategic_layer" },
 ];
 
 export function inferRoleTitleFromJd(rawText?: string | null) {
@@ -98,28 +103,80 @@ export function combineCandidateTranscript(turns: ConversationTurn[]) {
 }
 
 export function shouldAskFollowUp(evaluation: EvaluationResult) {
-  return evaluation.finalContentScoreAfterCaps <= 3 && evaluation.missingComponents.length > 0;
+  const weakSections = getWeakStarSections(evaluation);
+  const hasMissingStarSection = getMissingStarSections(evaluation).length > 0;
+  return (
+    evaluation.finalContentScoreAfterCaps <= 3 &&
+    (hasMissingStarSection ||
+      weakSections.length >= 2 ||
+      evaluation.starAssessment.result.status === "weak" ||
+      evaluation.missingComponents.length > 0)
+  );
 }
 
 export function buildFollowUpQuestion(
   question: QuestionBankItem,
   evaluation: EvaluationResult,
 ) {
-  const focus =
-    followUpPriority.find((component) =>
-      evaluation.missingComponents.includes(component),
-    ) ?? evaluation.missingComponents[0];
+  const missingStar = getMissingStarSections(evaluation);
+  const weakStar = getWeakStarSections(evaluation);
+  const focus = followUpPriority.find((entry) => {
+    if (entry.kind === "star") {
+      if (missingStar.includes(entry.value)) {
+        return true;
+      }
+      if (entry.value === "result" && weakStar.includes(entry.value)) {
+        return true;
+      }
+      if (entry.value === "action" && weakStar.includes(entry.value)) {
+        return true;
+      }
+      if ((entry.value === "situation" || entry.value === "task") && weakStar.includes(entry.value)) {
+        return true;
+      }
+      return false;
+    }
+
+    return evaluation.missingComponents.includes(entry.value);
+  });
 
   if (!focus) {
     return null;
   }
 
-  const prompt = followUpPrompts[focus];
-  if (question.code === "Q10" && focus === "metric") {
+  const target = focus.value;
+  const prompt = followUpPrompts[target];
+  if (question.code === "Q10" && target === "metric") {
     return "What specific evidence should convince me that you would be strong in this role?";
   }
 
   return prompt;
+}
+
+function getMissingStarSections(evaluation: EvaluationResult) {
+  if (!evaluation.starAssessment) {
+    return (["situation", "task", "action", "result"] as StarSection[]).filter((section) =>
+      evaluation.missingComponents.includes(section),
+    );
+  }
+
+  return (Object.entries(evaluation.starAssessment) as Array<
+    [StarSection, EvaluationResult["starAssessment"][StarSection]]
+  >)
+    .filter(([, section]) => section.status === "missing")
+    .map(([section]) => section);
+}
+
+function getWeakStarSections(evaluation: EvaluationResult) {
+  if (!evaluation.starAssessment) {
+    return [];
+  }
+
+  return (Object.entries(evaluation.starAssessment) as Array<
+    [StarSection, EvaluationResult["starAssessment"][StarSection]]
+  >)
+    .filter(([, section]) => section.status === "weak")
+    .map(([section]) => section);
 }
 
 function cleanRoleTitle(value: string) {

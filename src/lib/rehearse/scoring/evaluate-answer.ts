@@ -4,10 +4,71 @@ import type {
   EvaluationResult,
   MissingComponent,
   ScoreCap,
+  StarCoverage,
+  StarSection,
+  StarSectionAssessment,
+  StarSectionStatus,
 } from "@/types/rehearse";
 import { average, clamp } from "@/lib/utils";
 import { scoreDelivery } from "@/lib/rehearse/delivery/metrics";
 import { buildNudge } from "@/lib/rehearse/nudges/generate-nudge";
+
+const starSections: StarSection[] = ["situation", "task", "action", "result"];
+const specificActionVerbs = [
+  "built",
+  "created",
+  "aligned",
+  "designed",
+  "implemented",
+  "prioritized",
+  "spoke",
+  "decided",
+  "launched",
+  "changed",
+  "introduced",
+  "mapped",
+  "reset",
+  "documented",
+  "negotiated",
+  "escalated",
+  "analyzed",
+  "coordinated",
+  "reviewed",
+  "tested",
+  "measured",
+  "automated",
+  "drafted",
+  "reworked",
+  "planned",
+];
+const genericActionVerbs = [
+  "led",
+  "managed",
+  "helped",
+  "worked",
+  "supported",
+  "handled",
+  "fixed",
+  "drove",
+  "owned",
+];
+const situationContextPattern =
+  /\bwhen|while|during|at the time|in my role|working on|our team|the team|project|launch|migration|incident|rollout\b/;
+const situationChallengePattern =
+  /\bchallenge|challenging|problem|issue|constraint|deadline|behind|blocked|pressure|ambigu|uncertain|risk|delay|outage|conflict|backlog|shortage|complex|scope\b/;
+const strongTaskPattern =
+  /\bmy goal was|i needed to|i was responsible for|the task was|i had to|i owned|i was accountable for|my remit was|i was asked to\b/;
+const weakTaskPattern =
+  /\bgoal|responsible|task|objective|ownership|accountable|needed to|had to\b/;
+const actionSpecificPattern = new RegExp(`\\bi\\b[^.!?\\n]{0,160}\\b(${specificActionVerbs.join("|")})\\b`);
+const actionGenericPattern = new RegExp(`\\bi\\b[^.!?\\n]{0,160}\\b(${genericActionVerbs.join("|")})\\b`);
+const actionDetailPattern =
+  /\b(first|second|third|by|through|using|with|across|daily|weekly|timeline|plan|checklist|workstream|stakeholder|stakeholders|engineering|product|support|vendor|compliance|experiment|analysis|critical path|decision|trade-off|feature|metric|review|checkpoint)\b/;
+const resultOutcomePattern =
+  /\b(as a result|result|outcome|led to|reduced|improved|increased|decreased|grew|launched|delivered|cut|raised|lowered|prevented|saved|on time|rolled out)\b/;
+const resultProofPattern =
+  /\b(we knew|measured|tracked|saw|within|from\b.+\bto|customer|customers|adoption|retention|escalations|sla|complaints|tickets|conversion|activation|feedback|survey|renewal|retained|continued to use|adopted|usage)\b/;
+const genericResultPattern = /\b(solved|fixed|worked|successful|success|better)\b/;
 
 export function evaluateAnswerHeuristically(input: EvaluationInput): {
   evaluation: EvaluationResult;
@@ -16,14 +77,13 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
   const transcript = input.transcript.trim();
   const normalized = transcript.toLowerCase();
   const deliveryScore = scoreDelivery(input.deliveryMetrics);
-  const missing = detectMissingComponents(normalized, input.question.code);
-  const strengths = detectStrengths(normalized, input.question.code, input.cvSummary);
-  const rawScore = scoreContent(missing, normalized);
+  const starAssessment = assessStarSections(transcript, input.question.code);
+  const missing = detectMissingComponents(normalized, input.question.code, starAssessment);
+  const strengths = detectStrengths(normalized, input.question.code, input.cvSummary, starAssessment);
+  const rawScore = scoreContent(missing, normalized, starAssessment);
   const capsApplied = detectCaps(input, missing, normalized);
   const cappedScore = normalizeTopScore(applyCaps(rawScore, capsApplied), missing);
-  const weightedContentScore = roundScore(
-    cappedScore * input.seniorityMultiplier,
-  );
+  const weightedContentScore = roundScore(cappedScore * input.seniorityMultiplier);
   const weightedContentMax = roundScore(5 * input.seniorityMultiplier);
 
   const evaluation: EvaluationResult = {
@@ -32,12 +92,13 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
     weightedContentScore,
     weightedContentMax,
     deliveryScore,
+    starAssessment,
     missingComponents: missing,
     strengths,
     nudges: missing.length > 0 ? [buildNudge(input.question, strengths, missing)] : [],
     capsApplied,
     contentReasoning: {
-      structure: describeStructure(missing),
+      structure: describeStructure(starAssessment),
       ownership: missing.includes("ownership")
         ? "Ownership is not yet explicit enough."
         : "Ownership is explicit and credible.",
@@ -77,16 +138,30 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
   return { evaluation, feedback };
 }
 
+export function assessStarSections(
+  transcript: string,
+  _questionCode: string,
+): Record<StarSection, StarSectionAssessment> {
+  const source = transcript.trim();
+  const normalized = source.toLowerCase();
+  const sentences = splitIntoSentences(source);
+  const assessment = {
+    situation: assessSituation(normalized, sentences),
+    task: assessTask(normalized, sentences),
+    action: assessAction(normalized, sentences),
+    result: assessResult(normalized, sentences),
+  } satisfies Record<StarSection, StarSectionAssessment>;
+
+  return applyShortAnswerFloor(assessment, normalized);
+}
+
 export function detectMissingComponents(
   normalized: string,
   questionCode: string,
+  starAssessment = assessStarSections(normalized, questionCode),
 ): MissingComponent[] {
-  const missing: MissingComponent[] = [];
+  const missing = deriveMissingComponents(starAssessment, questionCode);
 
-  if (!hasSituation(normalized)) missing.push("situation");
-  if (!hasTask(normalized) && questionCode !== "Q10") missing.push("task");
-  if (!hasAction(normalized)) missing.push("action");
-  if (!hasResult(normalized)) missing.push("result");
   if (!hasMetric(normalized)) missing.push("metric");
   if (!hasOwnership(normalized)) missing.push("ownership");
   if (!hasReflection(normalized) && questionCode !== "Q10") missing.push("reflection");
@@ -103,13 +178,63 @@ export function detectMissingComponents(
   return Array.from(new Set(missing));
 }
 
+export function deriveMissingComponents(
+  starAssessment: Record<StarSection, StarSectionAssessment>,
+  questionCode: string,
+): MissingComponent[] {
+  const missing: MissingComponent[] = [];
+
+  if (starAssessment.situation.status === "missing") missing.push("situation");
+  if (starAssessment.task.status === "missing" && questionCode !== "Q10") missing.push("task");
+  if (starAssessment.action.status === "missing") missing.push("action");
+  if (starAssessment.result.status === "missing") missing.push("result");
+
+  return missing;
+}
+
+export function normalizeStarAssessment(
+  candidate: Record<StarSection, StarSectionAssessment> | undefined,
+  transcript: string,
+  questionCode: string,
+): Record<StarSection, StarSectionAssessment> {
+  const heuristic = assessStarSections(transcript, questionCode);
+  if (!candidate) {
+    return heuristic;
+  }
+
+  return starSections.reduce<Record<StarSection, StarSectionAssessment>>((accumulator, section) => {
+    const parsed = candidate[section];
+    const fallback = heuristic[section];
+    const parsedStatus = parsed?.status ?? fallback.status;
+    const verified =
+      parsedStatus === "covered" && fallback.status !== "covered"
+        ? buildStarSectionAssessment(
+            "weak",
+            fallback.reason,
+            parsed?.evidence?.trim() || fallback.evidence,
+          )
+        : buildStarSectionAssessment(
+            parsedStatus,
+            parsed?.reason?.trim() || fallback.reason,
+            parsed?.evidence?.trim() || fallback.evidence,
+          );
+
+    accumulator[section] = verified;
+    return accumulator;
+  }, {} as Record<StarSection, StarSectionAssessment>);
+}
+
 function detectStrengths(
   normalized: string,
   questionCode: string,
   cvSummary?: EvaluationInput["cvSummary"],
+  starAssessment?: Record<StarSection, StarSectionAssessment>,
 ) {
   const strengths: string[] = [];
 
+  if (starAssessment && starSections.every((section) => starAssessment[section].status === "covered")) {
+    strengths.push("clear STAR structure");
+  }
   if (hasOwnership(normalized)) strengths.push("explicit ownership");
   if (hasMetric(normalized)) strengths.push("quantified impact");
   if (hasTradeoff(normalized)) strengths.push("trade-off clarity");
@@ -125,15 +250,22 @@ function detectStrengths(
 function scoreContent(
   missing: MissingComponent[],
   normalized: string,
+  starAssessment: Record<StarSection, StarSectionAssessment>,
 ): 1 | 2 | 3 | 4 | 5 {
-  const presenceScore = 10 - missing.length;
+  const starQualityTotal = starSections.reduce(
+    (sum, section) => sum + starAssessment[section].qualityScore,
+    0,
+  );
+  const nonStarMissingCount = missing.filter(
+    (component) => !starSections.includes(component as StarSection),
+  ).length;
   const conciseBonus = normalized.split(/\s+/).length <= 260 ? 0.5 : 0;
-  const score = presenceScore / 2 + conciseBonus;
+  const score = starQualityTotal - nonStarMissingCount + conciseBonus;
 
-  if (score < 2.6) return 1;
-  if (score < 3.6) return 2;
-  if (score < 4.4) return 3;
-  if (score < 4.9) return 4;
+  if (score < 2.5) return 1;
+  if (score < 4.5) return 2;
+  if (score < 6.25) return 3;
+  if (score < 7.5) return 4;
   return 5;
 }
 
@@ -212,7 +344,11 @@ export function buildAttemptFeedback(
   const headline = buildHeadline(evaluation);
   const deliverySummary = buildDeliverySummary(evaluation);
   const retryPrompt = buildRetryPrompt(evaluation, improveNext);
-  const answerStarter = buildAnswerStarter(evaluation.missingComponents, input.question.code);
+  const answerStarter = buildAnswerStarter(
+    evaluation.starAssessment,
+    evaluation.missingComponents,
+    input.question.code,
+  );
   const missingElements = evaluation.missingComponents.map(formatMissingComponent);
   const roleRelevance = buildRoleRelevanceFeedback(evaluation.roleRelevance);
 
@@ -223,12 +359,7 @@ export function buildAttemptFeedback(
     improveNext,
     deliverySummary,
     retryPrompt,
-    starCoverage: {
-      situation: !evaluation.missingComponents.includes("situation"),
-      task: !evaluation.missingComponents.includes("task"),
-      action: !evaluation.missingComponents.includes("action"),
-      result: !evaluation.missingComponents.includes("result"),
-    },
+    starCoverage: toStarCoverage(evaluation.starAssessment),
     missingElements,
     answerStarter,
     cvLeverage: leverage.length > 0 ? leverage : undefined,
@@ -248,17 +379,33 @@ function describeVerdict(score: EvaluationResult["finalContentScoreAfterCaps"]) 
 }
 
 function buildHeadline(evaluation: EvaluationResult) {
-  if (evaluation.finalContentScoreAfterCaps >= 4) {
+  const resultStatus = evaluation.starAssessment.result.status;
+  const actionStatus = evaluation.starAssessment.action.status;
+  const situationStatus = evaluation.starAssessment.situation.status;
+  const allCovered = starSections.every(
+    (section) => evaluation.starAssessment[section].status === "covered",
+  );
+
+  if (evaluation.finalContentScoreAfterCaps >= 4 && allCovered) {
     return "This answer lands well and feels interview-ready.";
   }
-  if (evaluation.missingComponents.includes("result")) {
+  if (resultStatus === "missing") {
     return "The story needs a clearer result so the answer actually lands.";
   }
-  if (evaluation.missingComponents.includes("action")) {
+  if (resultStatus === "weak") {
+    return "You hinted at the outcome, but it still does not prove what changed.";
+  }
+  if (actionStatus === "missing") {
     return "I can tell what the project was, but not enough about what you actually did.";
   }
-  if (evaluation.missingComponents.includes("situation")) {
+  if (actionStatus === "weak") {
+    return "You named your role, but not enough of what you actually did.";
+  }
+  if (situationStatus === "missing") {
     return "The answer starts too abruptly and needs more setup.";
+  }
+  if (situationStatus === "weak") {
+    return "You hinted at the context, but the challenge still is not concrete.";
   }
   return "There is a good answer here, but it still feels too thin to be convincing.";
 }
@@ -267,21 +414,20 @@ function buildImproveNext(
   evaluation: EvaluationResult,
   input: EvaluationInput,
 ) {
-  const suggestions = [
-    ...evaluation.missingComponents.map((component) => {
+  const missingStarSuggestions = getStarSectionsByStatus(evaluation.starAssessment, "missing").map(
+    toMissingStarSuggestion,
+  );
+  const weakStarSuggestions = getStarSectionsByStatus(evaluation.starAssessment, "weak").map(
+    toWeakStarSuggestion,
+  );
+  const nonStarSuggestions = evaluation.missingComponents
+    .filter((component) => !starSections.includes(component as StarSection))
+    .map((component) => {
       switch (component) {
-        case "result":
-          return "State the result and what changed because of your work.";
         case "metric":
           return "Add a measurable outcome or a before-and-after indicator.";
         case "ownership":
           return "Make your own contribution unmistakably clear.";
-        case "situation":
-          return "Open with the situation so the challenge feels real.";
-        case "task":
-          return "Say what you were personally responsible for.";
-        case "action":
-          return "Spend more time on the actions you took.";
         case "reflection":
           return "Close with what you learned or would repeat next time.";
         case "tradeoff":
@@ -293,7 +439,11 @@ function buildImproveNext(
         default:
           return "Add more concrete detail.";
       }
-    }),
+    });
+  const suggestions = [
+    ...missingStarSuggestions,
+    ...weakStarSuggestions,
+    ...nonStarSuggestions,
     ...buildDeliveryImproveNext(input),
   ];
 
@@ -338,15 +488,23 @@ function buildRetryPrompt(
     return "Try again with the same structure and make the final impact even more concrete.";
   }
 
-  if (evaluation.missingComponents.includes("result")) {
+  if (evaluation.starAssessment.result.status === "missing") {
     return "Try again and make the result and what changed because of your work unmistakably clear.";
   }
 
-  if (evaluation.missingComponents.includes("action")) {
+  if (evaluation.starAssessment.result.status === "weak") {
+    return "Try again and make the outcome concrete enough to prove that it worked.";
+  }
+
+  if (evaluation.starAssessment.action.status === "missing") {
     return "Try again and spend more time on the actions you personally drove.";
   }
 
-  if (evaluation.missingComponents.includes("situation")) {
+  if (evaluation.starAssessment.action.status === "weak") {
+    return "Try again and add the decisions and execution detail behind your actions.";
+  }
+
+  if (evaluation.starAssessment.situation.status !== "covered") {
     return "Try again and anchor the answer in the situation before you move into the action.";
   }
 
@@ -563,22 +721,32 @@ const transferableRoleTerms = new Set([
   "strategy",
 ]);
 
-function buildAnswerStarter(missing: MissingComponent[], questionCode: string) {
-  if (missing.length === 0) {
+function buildAnswerStarter(
+  starAssessment: Record<StarSection, StarSectionAssessment>,
+  missing: MissingComponent[],
+  questionCode: string,
+) {
+  if (
+    starSections.every((section) => starAssessment[section].status === "covered") &&
+    missing.length === 0
+  ) {
     return "Start with one sentence of context, spend most of the answer on your actions, and close on the result.";
   }
 
-  if (missing.includes("situation") || missing.includes("task")) {
+  if (
+    starAssessment.situation.status !== "covered" ||
+    (questionCode !== "Q10" && starAssessment.task.status !== "covered")
+  ) {
     return questionCode === "Q10"
       ? "Open with the strongest reason you match this role, then support it with evidence."
       : "Start with: In my role, I was responsible for..., and the challenge was...";
   }
 
-  if (missing.includes("action")) {
+  if (starAssessment.action.status !== "covered") {
     return "Then continue with: I focused on three things. First..., second..., and third...";
   }
 
-  if (missing.includes("result") || missing.includes("metric")) {
+  if (starAssessment.result.status !== "covered" || missing.includes("metric")) {
     return "Close with: As a result, we changed X to Y, which meant...";
   }
 
@@ -587,6 +755,8 @@ function buildAnswerStarter(missing: MissingComponent[], questionCode: string) {
 
 function toCandidateStrength(value: string) {
   switch (value) {
+    case "clear STAR structure":
+      return "You gave the story a clear STAR shape.";
     case "explicit ownership":
       return "You sound like the person who drove the work.";
     case "quantified impact":
@@ -613,15 +783,15 @@ function formatMissingComponent(value: MissingComponent) {
   }
 }
 
-function describeStructure(missing: MissingComponent[]) {
-  const starCoverage = ["situation", "task", "action", "result"].filter(
-    (item) => !missing.includes(item as MissingComponent),
-  );
-  if (starCoverage.length === 4) {
+function describeStructure(starAssessment: Record<StarSection, StarSectionAssessment>) {
+  const coveredCount = getStarSectionsByStatus(starAssessment, "covered").length;
+  const weakCount = getStarSectionsByStatus(starAssessment, "weak").length;
+
+  if (coveredCount === 4) {
     return "The answer follows a recognizable STAR flow.";
   }
-  if (starCoverage.length >= 2) {
-    return "The answer has partial STAR structure but still leaves gaps.";
+  if (coveredCount + weakCount >= 2) {
+    return "The answer has a STAR shape, but parts of it are still too thin to count as fully covered.";
   }
   return "The answer needs a clearer STAR shape.";
 }
@@ -652,26 +822,6 @@ function textSimilarity(left: string, right: string) {
     ...Array.from(rightTokens),
   ]);
   return union.size === 0 ? 0 : shared.length / union.size;
-}
-
-function hasSituation(text: string) {
-  return /\bwhen|at the time|in my role|while working on|during\b/.test(text);
-}
-
-function hasTask(text: string) {
-  return /\bmy goal|i needed to|i was responsible|the task was|i had to\b/.test(text);
-}
-
-function hasAction(text: string) {
-  return /\bi (built|created|led|drove|aligned|designed|implemented|prioritized|spoke|decided|launched|changed|introduced)\b/.test(
-    text,
-  );
-}
-
-function hasResult(text: string) {
-  return /\b(result|outcome|as a result|led to|reduced|improved|increased|decreased|delivered)\b/.test(
-    text,
-  );
 }
 
 function hasMetric(text: string) {
@@ -708,6 +858,251 @@ function hasStrategicLayer(text: string) {
   return /\bcompany|organization|org|team-wide|roadmap|business|customer|executive|system\b/.test(
     text,
   );
+}
+
+function splitIntoSentences(text: string) {
+  return text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function assessSituation(normalized: string, sentences: string[]) {
+  const evidence = findEvidence(sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return situationContextPattern.test(lowered) || situationChallengePattern.test(lowered);
+  });
+  const hasContext = situationContextPattern.test(normalized);
+  const hasChallenge = situationChallengePattern.test(normalized);
+
+  if (hasContext && hasChallenge) {
+    return buildStarSectionAssessment(
+      "covered",
+      "The answer sets up both the context and the challenge clearly enough to anchor the story.",
+      evidence,
+    );
+  }
+
+  if (hasContext || hasChallenge) {
+    return buildStarSectionAssessment(
+      "weak",
+      "You hinted at the context, but the challenge still is not concrete.",
+      evidence,
+    );
+  }
+
+  return buildStarSectionAssessment(
+    "missing",
+    "The answer never sets up the situation or why it was challenging.",
+    null,
+  );
+}
+
+function assessTask(normalized: string, sentences: string[]) {
+  const evidence = findEvidence(sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return strongTaskPattern.test(lowered) || weakTaskPattern.test(lowered);
+  });
+
+  if (strongTaskPattern.test(normalized)) {
+    return buildStarSectionAssessment(
+      "covered",
+      "The answer states the speaker's goal or responsibility explicitly.",
+      evidence,
+    );
+  }
+
+  if (weakTaskPattern.test(normalized)) {
+    return buildStarSectionAssessment(
+      "weak",
+      "The answer gestures at ownership, but it does not clearly state the speaker's responsibility.",
+      evidence,
+    );
+  }
+
+  return buildStarSectionAssessment(
+    "missing",
+    "The answer never states what the speaker was personally responsible for.",
+    null,
+  );
+}
+
+function assessAction(normalized: string, sentences: string[]) {
+  const evidence = findEvidence(sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return actionSpecificPattern.test(lowered) || actionGenericPattern.test(lowered);
+  });
+  const hasSpecificAction = actionSpecificPattern.test(normalized);
+  const hasGenericAction = actionGenericPattern.test(normalized);
+  const hasActionDetail = actionDetailPattern.test(normalized);
+  const specificSentenceCount = sentences.filter((sentence) =>
+    actionSpecificPattern.test(sentence.toLowerCase()),
+  ).length;
+
+  if (
+    (hasSpecificAction && (hasActionDetail || specificSentenceCount >= 2)) ||
+    (hasGenericAction && hasActionDetail)
+  ) {
+    return buildStarSectionAssessment(
+      "covered",
+      "The answer explains concrete actions, not just a generic claim of leadership or support.",
+      evidence,
+    );
+  }
+
+  if (hasSpecificAction || hasGenericAction) {
+    return buildStarSectionAssessment(
+      "weak",
+      "You named your role, but not enough of what you actually did.",
+      evidence,
+    );
+  }
+
+  return buildStarSectionAssessment(
+    "missing",
+    "The answer does not explain the actions the speaker took.",
+    null,
+  );
+}
+
+function assessResult(normalized: string, sentences: string[]) {
+  const evidence = findEvidence(sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return (
+      resultOutcomePattern.test(lowered) ||
+      resultProofPattern.test(lowered) ||
+      genericResultPattern.test(lowered)
+    );
+  });
+  const hasOutcome = resultOutcomePattern.test(normalized);
+  const hasProof = hasMetric(normalized) || resultProofPattern.test(normalized);
+
+  if (hasOutcome && hasProof) {
+    return buildStarSectionAssessment(
+      "covered",
+      "The answer makes the outcome concrete and explains how success showed up.",
+      evidence,
+    );
+  }
+
+  if (hasOutcome || genericResultPattern.test(normalized)) {
+    return buildStarSectionAssessment(
+      "weak",
+      "You implied an outcome, but not clearly enough to prove impact.",
+      evidence,
+    );
+  }
+
+  return buildStarSectionAssessment(
+    "missing",
+    "The answer never lands on what changed or how success was known.",
+    null,
+  );
+}
+
+function applyShortAnswerFloor(
+  starAssessment: Record<StarSection, StarSectionAssessment>,
+  normalized: string,
+) {
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  if (wordCount >= 30) {
+    return starAssessment;
+  }
+
+  return starSections.reduce<Record<StarSection, StarSectionAssessment>>((accumulator, section) => {
+    const current = starAssessment[section];
+    accumulator[section] =
+      current.status === "covered"
+        ? buildStarSectionAssessment(
+            "weak",
+            "The answer is too short for this section to count as fully covered yet.",
+            current.evidence,
+          )
+        : current;
+    return accumulator;
+  }, {} as Record<StarSection, StarSectionAssessment>);
+}
+
+function buildStarSectionAssessment(
+  status: StarSectionStatus,
+  reason: string,
+  evidence: string | null,
+): StarSectionAssessment {
+  return {
+    status,
+    reason,
+    evidence: evidence?.trim() || null,
+    qualityScore: toQualityScore(status),
+  };
+}
+
+function toQualityScore(status: StarSectionStatus): 0 | 1 | 2 {
+  switch (status) {
+    case "covered":
+      return 2;
+    case "weak":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function toStarCoverage(
+  starAssessment: Record<StarSection, StarSectionAssessment>,
+): StarCoverage {
+  return starSections.reduce<StarCoverage>((accumulator, section) => {
+    accumulator[section] = starAssessment[section].status;
+    return accumulator;
+  }, {
+    situation: "missing",
+    task: "missing",
+    action: "missing",
+    result: "missing",
+  });
+}
+
+function getStarSectionsByStatus(
+  starAssessment: Record<StarSection, StarSectionAssessment>,
+  status: StarSectionStatus,
+) {
+  return starSections.filter((section) => starAssessment[section].status === status);
+}
+
+function toMissingStarSuggestion(section: StarSection) {
+  switch (section) {
+    case "result":
+      return "State the result and what changed because of your work.";
+    case "action":
+      return "Spend more time on the actions you took.";
+    case "task":
+      return "Say what you were personally responsible for.";
+    case "situation":
+      return "Open with the situation so the challenge feels real.";
+    default:
+      return "Add more concrete detail.";
+  }
+}
+
+function toWeakStarSuggestion(section: StarSection) {
+  switch (section) {
+    case "result":
+      return "You implied an outcome, but not clearly enough to prove impact.";
+    case "action":
+      return "You named your role, but not enough of what you actually did.";
+    case "task":
+      return "You hinted at your ownership, but your responsibility is still too vague.";
+    case "situation":
+      return "You hinted at the context, but the challenge still is not concrete.";
+    default:
+      return "Add more concrete detail.";
+  }
+}
+
+function findEvidence(
+  sentences: string[],
+  predicate: (sentence: string) => boolean,
+) {
+  return sentences.find((sentence) => predicate(sentence)) ?? null;
 }
 
 function roundScore(value: number) {
