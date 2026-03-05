@@ -71,10 +71,13 @@ export default async function SessionSummaryPage({
             </div>
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div className="rounded-lg border border-grey-5 bg-white/70 p-4">
-                <p className="text-xs text-grey-4">Verdict</p>
+                <p className="text-xs text-grey-4">Content score</p>
                 <p className="mt-2 text-xl font-semibold text-grey-1">
-                  {question.finalFeedback?.verdict ?? "Not scored"}
+                  {question.finalContentCapped != null ? `${question.finalContentCapped}/5` : "Not scored"}
                 </p>
+                {question.finalFeedback ? (
+                  <p className="mt-1 text-sm text-grey-3">{question.finalFeedback.verdict}</p>
+                ) : null}
               </div>
               <div className="rounded-lg border border-grey-5 bg-white/70 p-4">
                 <p className="text-xs text-grey-4">Attempts</p>

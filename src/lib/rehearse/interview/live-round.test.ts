@@ -16,6 +16,68 @@ function buildEvaluation(
     weightedContentScore: 3.6,
     weightedContentMax: 6,
     deliveryScore: 3,
+    criterionAssessment: {
+      situation: {
+        status: "covered",
+        reason: "Clear context.",
+        evidence: "When the rollout slipped...",
+        qualityScore: 2,
+      },
+      task: {
+        status: "covered",
+        reason: "Clear responsibility.",
+        evidence: "I was responsible for recovering the launch.",
+        qualityScore: 2,
+      },
+      action: {
+        status: "covered",
+        reason: "Clear actions.",
+        evidence: "I mapped the critical path and aligned engineering.",
+        qualityScore: 2,
+      },
+      result: {
+        status: "covered",
+        reason: "Clear result.",
+        evidence: "We launched on time and tickets fell.",
+        qualityScore: 2,
+      },
+      metric: {
+        status: "covered",
+        reason: "Metric present.",
+        evidence: "Tickets fell.",
+        qualityScore: 2,
+      },
+      ownership: {
+        status: "covered",
+        reason: "Ownership is clear.",
+        evidence: "I was responsible.",
+        qualityScore: 2,
+      },
+      reflection: {
+        status: "covered",
+        reason: "Reflection is clear.",
+        evidence: "I learned...",
+        qualityScore: 2,
+      },
+      tradeoff: {
+        status: "covered",
+        reason: "Trade-off is clear.",
+        evidence: "Instead of...",
+        qualityScore: 2,
+      },
+      resistance: {
+        status: "covered",
+        reason: "Resistance is clear.",
+        evidence: "Another team objected.",
+        qualityScore: 2,
+      },
+      strategic_layer: {
+        status: "covered",
+        reason: "Strategic impact is clear.",
+        evidence: "The business benefited.",
+        qualityScore: 2,
+      },
+    },
     starAssessment: {
       situation: {
         status: "covered",
@@ -117,6 +179,15 @@ describe("live-round JD heuristics", () => {
 describe("live-round follow-up targeting", () => {
   it("asks a follow-up when the result is weak", () => {
     const evaluation = buildEvaluation({
+      criterionAssessment: {
+        ...buildEvaluation().criterionAssessment,
+        result: {
+          status: "weak",
+          reason: "Outcome is vague.",
+          evidence: "It worked better.",
+          qualityScore: 1,
+        },
+      },
       starAssessment: {
         ...buildEvaluation().starAssessment,
         result: {
@@ -136,6 +207,21 @@ describe("live-round follow-up targeting", () => {
 
   it("asks a follow-up when two STAR sections are weak", () => {
     const evaluation = buildEvaluation({
+      criterionAssessment: {
+        ...buildEvaluation().criterionAssessment,
+        situation: {
+          status: "weak",
+          reason: "Context is vague.",
+          evidence: "When things were hard.",
+          qualityScore: 1,
+        },
+        action: {
+          status: "weak",
+          reason: "Actions are vague.",
+          evidence: "I led it.",
+          qualityScore: 1,
+        },
+      },
       starAssessment: {
         ...buildEvaluation().starAssessment,
         situation: {
@@ -166,5 +252,34 @@ describe("live-round follow-up targeting", () => {
 
     expect(shouldAskFollowUp(evaluation)).toBe(false);
     expect(buildFollowUpQuestion(question, evaluation)).toBeNull();
+  });
+
+  it("prefers the highest-impact unresolved criterion once structure is already covered", () => {
+    const conflictQuestion = {
+      ...question,
+      code: "Q2",
+      rubric: {
+        mustInclude: ["situation", "action", "result", "ownership", "reflection", "resistance"],
+        score5Signals: ["clear conflict type"],
+      },
+    } as const;
+    const evaluation = buildEvaluation({
+      finalContentScoreAfterCaps: 3,
+      capsApplied: ["no_reflection"],
+      criterionAssessment: {
+        ...buildEvaluation().criterionAssessment,
+        reflection: {
+          status: "missing",
+          reason: "No learning stated.",
+          evidence: null,
+          qualityScore: 0,
+        },
+      },
+    });
+
+    expect(shouldAskFollowUp(evaluation)).toBe(true);
+    expect(buildFollowUpQuestion(conflictQuestion, evaluation)).toBe(
+      "What did you learn, and what would you do differently next time?",
+    );
   });
 });

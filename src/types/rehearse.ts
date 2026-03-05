@@ -63,7 +63,8 @@ export type TranscriptProvider = "gpt-4o-transcribe" | "manual-transcript";
 export type ParseStatus = "parsed" | "warning" | "failed";
 export type ConversationSpeaker = "interviewer" | "candidate" | "system";
 export type StarSection = "situation" | "task" | "action" | "result";
-export type StarSectionStatus = "missing" | "weak" | "covered";
+export type CriterionAssessmentStatus = "missing" | "weak" | "covered";
+export type StarSectionStatus = CriterionAssessmentStatus;
 export type RoleRelevanceAssessment =
   | "direct_match"
   | "transferable"
@@ -95,6 +96,7 @@ export interface EvaluationResult {
   weightedContentScore: number;
   weightedContentMax: number;
   deliveryScore: 1 | 2 | 3 | 4 | 5;
+  criterionAssessment: Record<MissingComponent, CriterionAssessment>;
   starAssessment: Record<StarSection, StarSectionAssessment>;
   missingComponents: MissingComponent[];
   strengths: string[];
@@ -132,6 +134,15 @@ export interface StarSectionAssessment {
   status: StarSectionStatus;
   reason: string;
   evidence: string | null;
+  strictnessNote?: string | null;
+  qualityScore: 0 | 1 | 2;
+}
+
+export interface CriterionAssessment {
+  status: CriterionAssessmentStatus;
+  reason: string;
+  evidence: string | null;
+  strictnessNote?: string | null;
   qualityScore: 0 | 1 | 2;
 }
 
@@ -163,6 +174,7 @@ export interface QuestionBankItem {
 export interface AttemptFeedback {
   verdict: string;
   headline: string;
+  scoreExplanation: string;
   strengths: string[];
   improveNext: string[];
   deliverySummary: string;
@@ -348,14 +360,18 @@ export const scoreCapSchema = z.enum([
   "short_answer_cap",
 ]);
 
-export const starSectionStatusSchema = z.enum(["missing", "weak", "covered"]);
+export const criterionAssessmentStatusSchema = z.enum(["missing", "weak", "covered"]);
+export const starSectionStatusSchema = criterionAssessmentStatusSchema;
 
-export const starSectionAssessmentSchema = z.object({
-  status: starSectionStatusSchema,
+export const criterionAssessmentSchema = z.object({
+  status: criterionAssessmentStatusSchema,
   reason: z.string(),
   evidence: z.string().nullable(),
+  strictnessNote: z.string().nullable().optional(),
   qualityScore: z.union([z.literal(0), z.literal(1), z.literal(2)]),
 });
+
+export const starSectionAssessmentSchema = criterionAssessmentSchema;
 
 export const cvRoleSchema = z.object({
   title: z.string(),
@@ -412,6 +428,18 @@ export const evaluationResultSchema = z.object({
     z.literal(4),
     z.literal(5),
   ]),
+  criterionAssessment: z.object({
+    situation: criterionAssessmentSchema,
+    task: criterionAssessmentSchema,
+    action: criterionAssessmentSchema,
+    result: criterionAssessmentSchema,
+    metric: criterionAssessmentSchema,
+    ownership: criterionAssessmentSchema,
+    reflection: criterionAssessmentSchema,
+    tradeoff: criterionAssessmentSchema,
+    resistance: criterionAssessmentSchema,
+    strategic_layer: criterionAssessmentSchema,
+  }),
   starAssessment: z.object({
     situation: starSectionAssessmentSchema,
     task: starSectionAssessmentSchema,

@@ -28,7 +28,7 @@ import {
   detectCaps,
   deriveMissingComponents,
   evaluateAnswerHeuristically,
-  normalizeStarAssessment,
+  normalizeCriterionAssessment,
   roundWeightedScore,
 } from "@/lib/rehearse/scoring/evaluate-answer";
 import {
@@ -423,13 +423,23 @@ function normalizeModelEvaluation(
   parsed: EvaluationResult,
 ): EvaluationResult {
   const normalizedTranscript = input.transcript.trim().toLowerCase();
-  const starAssessment = normalizeStarAssessment(
-    parsed.starAssessment,
+  const criterionAssessment = normalizeCriterionAssessment(
+    parsed.criterionAssessment,
     input.transcript,
     input.question.code,
   );
-  const missingComponents = deriveMissingComponents(starAssessment, input.question.code);
-  const capsApplied = detectCaps(input, missingComponents, normalizedTranscript);
+  const starAssessment = {
+    situation: criterionAssessment.situation,
+    task: criterionAssessment.task,
+    action: criterionAssessment.action,
+    result: criterionAssessment.result,
+  };
+  const missingComponents = deriveMissingComponents(
+    criterionAssessment,
+    input.question.code,
+    input.question.rubric.mustInclude,
+  );
+  const capsApplied = detectCaps(input, criterionAssessment, normalizedTranscript);
   const finalContentScoreAfterCaps = normalizeTopScore(
     applyCaps(parsed.contentScoreRaw, capsApplied),
     missingComponents,
@@ -437,6 +447,7 @@ function normalizeModelEvaluation(
 
   return {
     ...parsed,
+    criterionAssessment,
     starAssessment,
     missingComponents,
     capsApplied,

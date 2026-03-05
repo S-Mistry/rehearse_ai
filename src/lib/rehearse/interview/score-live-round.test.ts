@@ -74,6 +74,68 @@ function buildEvaluation(
     weightedContentScore: 3.6,
     weightedContentMax: 6,
     deliveryScore: 3,
+    criterionAssessment: {
+      situation: {
+        status: "covered",
+        reason: "Clear context.",
+        evidence: "When the migration slipped...",
+        qualityScore: 2,
+      },
+      task: {
+        status: "covered",
+        reason: "Clear ownership.",
+        evidence: "I was responsible for recovering the launch.",
+        qualityScore: 2,
+      },
+      action: {
+        status: "covered",
+        reason: "Concrete actions.",
+        evidence: "I mapped the critical path and aligned engineering.",
+        qualityScore: 2,
+      },
+      result: {
+        status: "missing",
+        reason: "No result yet.",
+        evidence: null,
+        qualityScore: 0,
+      },
+      metric: {
+        status: "missing",
+        reason: "No metric yet.",
+        evidence: null,
+        qualityScore: 0,
+      },
+      ownership: {
+        status: "covered",
+        reason: "Ownership is clear.",
+        evidence: "I was responsible for recovering the launch.",
+        qualityScore: 2,
+      },
+      reflection: {
+        status: "missing",
+        reason: "No reflection yet.",
+        evidence: null,
+        qualityScore: 0,
+      },
+      tradeoff: {
+        status: "missing",
+        reason: "No trade-off yet.",
+        evidence: null,
+        qualityScore: 0,
+      },
+      resistance: {
+        status: "covered",
+        reason: "No resistance required for this answer.",
+        evidence: null,
+        qualityScore: 2,
+      },
+      strategic_layer: {
+        status: "weak",
+        reason: "Broader impact is implied.",
+        evidence: "Aligned engineering.",
+        qualityScore: 1,
+      },
+    },
     starAssessment: buildStarAssessment(),
     missingComponents: ["result"],
     strengths: ["Clear ownership"],
@@ -103,8 +165,9 @@ function buildEvaluation(
 
 function buildFeedback(overrides: Partial<AttemptFeedback> = {}): AttemptFeedback {
   return {
-    verdict: "Solid foundation",
+    verdict: "Good answer",
     headline: "The story needs a clearer result so the answer actually lands.",
+    scoreExplanation: "This lands at 3/5 because the result still needs more interview-ready detail.",
     strengths: ["Strong ownership"],
     improveNext: ["State the result and what changed because of your work."],
     deliverySummary: "Delivery was clear.",
@@ -116,7 +179,7 @@ function buildFeedback(overrides: Partial<AttemptFeedback> = {}): AttemptFeedbac
       result: "missing",
     },
     missingElements: ["result"],
-    spokenRecap: "Solid foundation. Close with the metric and final outcome.",
+    spokenRecap: "Good answer. Close with the metric and final outcome.",
     ...overrides,
   };
 }

@@ -10,8 +10,9 @@ function buildFeedback(
   overrides: Partial<AttemptFeedback> = {},
 ): AttemptFeedback {
   return {
-    verdict: "Solid foundation",
+    verdict: "Good answer",
     headline: "Needs a clearer result.",
+    scoreExplanation: "This lands at 3/5 because the result is still too thin.",
     strengths: ["Strong ownership"],
     improveNext: ["State the result and what changed because of your work."],
     deliverySummary: "Delivery was clear.",
@@ -23,7 +24,7 @@ function buildFeedback(
       result: "covered",
     },
     missingElements: ["action"],
-    spokenRecap: "Solid foundation.",
+    spokenRecap: "Good answer.",
     ...overrides,
   };
 }

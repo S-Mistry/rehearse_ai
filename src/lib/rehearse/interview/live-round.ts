@@ -5,9 +5,9 @@ import type {
   MissingComponent,
   QuestionBankItem,
   SessionBundle,
-  StarSection,
 } from "@/types/rehearse";
 import { buildInterviewerIntro } from "@/lib/rehearse/interview/interviewer-persona";
+import { rankFollowUpCriteria } from "@/lib/rehearse/scoring/evaluate-answer";
 
 const followUpPrompts: Record<MissingComponent, string> = {
   situation: "Before we move on, what was the situation and why was it challenging?",
@@ -21,23 +21,6 @@ const followUpPrompts: Record<MissingComponent, string> = {
   resistance: "What pushback or resistance did you have to work through?",
   strategic_layer: "How did this affect the wider team, customer, or business?",
 };
-
-type FollowUpPriority =
-  | { kind: "star"; value: StarSection }
-  | { kind: "missing"; value: MissingComponent };
-
-const followUpPriority: FollowUpPriority[] = [
-  { kind: "star", value: "result" },
-  { kind: "star", value: "action" },
-  { kind: "star", value: "situation" },
-  { kind: "star", value: "task" },
-  { kind: "missing", value: "metric" },
-  { kind: "missing", value: "ownership" },
-  { kind: "missing", value: "tradeoff" },
-  { kind: "missing", value: "reflection" },
-  { kind: "missing", value: "resistance" },
-  { kind: "missing", value: "strategic_layer" },
-];
 
 export function inferRoleTitleFromJd(rawText?: string | null) {
   const source = rawText?.trim();
@@ -103,14 +86,34 @@ export function combineCandidateTranscript(turns: ConversationTurn[]) {
 }
 
 export function shouldAskFollowUp(evaluation: EvaluationResult) {
-  const weakSections = getWeakStarSections(evaluation);
-  const hasMissingStarSection = getMissingStarSections(evaluation).length > 0;
+  const criterionAssessment = evaluation.criterionAssessment ?? {
+    ...Object.fromEntries(
+      (Object.entries(evaluation.starAssessment ?? {}) as Array<
+        [
+          keyof NonNullable<EvaluationResult["starAssessment"]>,
+          NonNullable<EvaluationResult["starAssessment"]>[keyof NonNullable<EvaluationResult["starAssessment"]>],
+        ]
+      >).map(([criterion, assessment]) => [criterion, assessment]),
+    ),
+    result:
+      evaluation.starAssessment?.result ??
+      {
+        status: evaluation.missingComponents.includes("result") ? "missing" : "covered",
+        reason: "",
+        evidence: null,
+        qualityScore: evaluation.missingComponents.includes("result") ? 0 : 2,
+      },
+  };
+  const unresolvedCriteria = Object.values(criterionAssessment).filter(
+    (criterion) => criterion.status !== "covered",
+  );
+  const weakCriteria = unresolvedCriteria.filter((criterion) => criterion.status === "weak");
+  const hasMissingCriterion = unresolvedCriteria.some((criterion) => criterion.status === "missing");
   return (
     evaluation.finalContentScoreAfterCaps <= 3 &&
-    (hasMissingStarSection ||
-      weakSections.length >= 2 ||
-      evaluation.starAssessment.result.status === "weak" ||
-      evaluation.missingComponents.length > 0)
+    (hasMissingCriterion ||
+      weakCriteria.length >= 2 ||
+      criterionAssessment.result.status === "weak")
   );
 }
 
@@ -118,33 +121,13 @@ export function buildFollowUpQuestion(
   question: QuestionBankItem,
   evaluation: EvaluationResult,
 ) {
-  const missingStar = getMissingStarSections(evaluation);
-  const weakStar = getWeakStarSections(evaluation);
-  const focus = followUpPriority.find((entry) => {
-    if (entry.kind === "star") {
-      if (missingStar.includes(entry.value)) {
-        return true;
-      }
-      if (entry.value === "result" && weakStar.includes(entry.value)) {
-        return true;
-      }
-      if (entry.value === "action" && weakStar.includes(entry.value)) {
-        return true;
-      }
-      if ((entry.value === "situation" || entry.value === "task") && weakStar.includes(entry.value)) {
-        return true;
-      }
-      return false;
-    }
-
-    return evaluation.missingComponents.includes(entry.value);
-  });
+  const focus = rankFollowUpCriteria(question, evaluation)[0];
 
   if (!focus) {
     return null;
   }
 
-  const target = focus.value;
+  const target = focus.criterion;
   const prompt = followUpPrompts[target];
   if (question.code === "Q10" && target === "metric") {
     return "What specific evidence should convince me that you would be strong in this role?";
@@ -152,33 +135,6 @@ export function buildFollowUpQuestion(
 
   return prompt;
 }
-
-function getMissingStarSections(evaluation: EvaluationResult) {
-  if (!evaluation.starAssessment) {
-    return (["situation", "task", "action", "result"] as StarSection[]).filter((section) =>
-      evaluation.missingComponents.includes(section),
-    );
-  }
-
-  return (Object.entries(evaluation.starAssessment) as Array<
-    [StarSection, EvaluationResult["starAssessment"][StarSection]]
-  >)
-    .filter(([, section]) => section.status === "missing")
-    .map(([section]) => section);
-}
-
-function getWeakStarSections(evaluation: EvaluationResult) {
-  if (!evaluation.starAssessment) {
-    return [];
-  }
-
-  return (Object.entries(evaluation.starAssessment) as Array<
-    [StarSection, EvaluationResult["starAssessment"][StarSection]]
-  >)
-    .filter(([, section]) => section.status === "weak")
-    .map(([section]) => section);
-}
-
 function cleanRoleTitle(value: string) {
   return value.replace(/\s+/g, " ").replace(/^[\-\s]+|[\-\s]+$/g, "");
 }

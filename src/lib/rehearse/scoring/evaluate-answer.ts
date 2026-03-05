@@ -1,8 +1,12 @@
 import type {
   AttemptFeedback,
+  CriterionAssessment,
+  CriterionAssessmentStatus,
   EvaluationInput,
   EvaluationResult,
   MissingComponent,
+  QuestionBankItem,
+  QuestionCode,
   ScoreCap,
   StarCoverage,
   StarSection,
@@ -12,8 +16,22 @@ import type {
 import { average, clamp } from "@/lib/utils";
 import { scoreDelivery } from "@/lib/rehearse/delivery/metrics";
 import { buildNudge } from "@/lib/rehearse/nudges/generate-nudge";
+import { getCriterionPolicy } from "@/lib/rehearse/scoring/criterion-policies";
 
 const starSections: StarSection[] = ["situation", "task", "action", "result"];
+const criteriaOrder: MissingComponent[] = [
+  "situation",
+  "task",
+  "action",
+  "result",
+  "metric",
+  "ownership",
+  "reflection",
+  "tradeoff",
+  "resistance",
+  "strategic_layer",
+];
+
 const specificActionVerbs = [
   "built",
   "created",
@@ -21,7 +39,6 @@ const specificActionVerbs = [
   "designed",
   "implemented",
   "prioritized",
-  "spoke",
   "decided",
   "launched",
   "changed",
@@ -40,6 +57,19 @@ const specificActionVerbs = [
   "drafted",
   "reworked",
   "planned",
+  "met",
+  "discussed",
+  "agreed",
+  "proposed",
+  "facilitated",
+  "reframed",
+  "shifted",
+  "resolved",
+  "coached",
+  "scoped",
+  "translated",
+  "delivered",
+  "ran",
 ];
 const genericActionVerbs = [
   "led",
@@ -52,23 +82,67 @@ const genericActionVerbs = [
   "drove",
   "owned",
 ];
+const collaborativeActionVerbs = [
+  "decided",
+  "agreed",
+  "created",
+  "changed",
+  "introduced",
+  "reviewed",
+  "shifted",
+  "resolved",
+  "built",
+  "set up",
+];
+
 const situationContextPattern =
-  /\bwhen|while|during|at the time|in my role|working on|our team|the team|project|launch|migration|incident|rollout\b/;
+  /\bwhen|while|during|at the time|in my role|working on|our team|the team|project|launch|migration|incident|rollout|process|pilot|business\b/;
 const situationChallengePattern =
-  /\bchallenge|challenging|problem|issue|constraint|deadline|behind|blocked|pressure|ambigu|uncertain|risk|delay|outage|conflict|backlog|shortage|complex|scope\b/;
+  /\bchallenge|challenging|problem|issue|constraint|deadline|behind|blocked|pressure|ambigu|uncertain|risk|delay|outage|conflict|backlog|shortage|complex|scope|friction|stalled|workload\b/;
 const strongTaskPattern =
-  /\bmy goal was|i needed to|i was responsible for|the task was|i had to|i owned|i was accountable for|my remit was|i was asked to\b/;
+  /\bmy goal was|i needed to|i was responsible for|the task was|i had to|i owned|i was accountable for|my remit was|i was asked to|i was managing|i founded|i created\b/;
 const weakTaskPattern =
-  /\bgoal|responsible|task|objective|ownership|accountable|needed to|had to\b/;
-const actionSpecificPattern = new RegExp(`\\bi\\b[^.!?\\n]{0,160}\\b(${specificActionVerbs.join("|")})\\b`);
-const actionGenericPattern = new RegExp(`\\bi\\b[^.!?\\n]{0,160}\\b(${genericActionVerbs.join("|")})\\b`);
+  /\bgoal|responsible|task|objective|ownership|accountable|needed to|had to|remit\b/;
 const actionDetailPattern =
-  /\b(first|second|third|by|through|using|with|across|daily|weekly|timeline|plan|checklist|workstream|stakeholder|stakeholders|engineering|product|support|vendor|compliance|experiment|analysis|critical path|decision|trade-off|feature|metric|review|checkpoint)\b/;
+  /\b(first|second|third|by|through|using|with|across|daily|weekly|timeline|plan|checklist|workstream|stakeholder|stakeholders|engineering|product|support|vendor|compliance|experiment|analysis|critical path|decision|feature|metric|review|checkpoint|options|pilot|prototype|mvp|requirements|scope)\b/;
 const resultOutcomePattern =
-  /\b(as a result|result|outcome|led to|reduced|improved|increased|decreased|grew|launched|delivered|cut|raised|lowered|prevented|saved|on time|rolled out)\b/;
+  /\b(as a result|result|outcome|led to|reduced|improved|increased|decreased|grew|launched|delivered|cut|raised|lowered|prevented|saved|on time|rolled out|happy|happier)\b/;
 const resultProofPattern =
-  /\b(we knew|measured|tracked|saw|within|from\b.+\bto|customer|customers|adoption|retention|escalations|sla|complaints|tickets|conversion|activation|feedback|survey|renewal|retained|continued to use|adopted|usage)\b/;
-const genericResultPattern = /\b(solved|fixed|worked|successful|success|better)\b/;
+  /\b(we knew|measured|tracked|saw|within|from\b.+\bto|customer|customers|adoption|retention|escalations|sla|complaints|tickets|conversion|activation|feedback|survey|renewal|retained|continued to use|adopted|usage|operational overhead|expense)\b/;
+const genericResultPattern = /\b(solved|fixed|worked|successful|success|better|faster)\b/;
+const metricPattern =
+  /\b\d+(\.\d+)?\s?(%|percent|x|hours?|days?|weeks?|months?|years?|people|customers?|tickets?|orders?|incidents?|minutes?|seconds?|points?|times?)\b|\$\d+(,\d{3})*(\.\d+)?|\bover\s+\$?\d+(,\d{3})*(\.\d+)?\b|\bfrom\b[^.?!\n]{0,60}\bto\b/i;
+const weakMetricPattern = /\b(faster|slower|more|less|materially|significantly|a lot|many|fewer)\b/;
+const ownershipAnchorPattern = new RegExp(
+  `\\bi\\b[^.!?\\n]{0,80}\\b(${[...specificActionVerbs, ...genericActionVerbs, "founded"].join("|")})\\b`,
+);
+const ownershipScopePattern =
+  /\b(end-to-end|cross-functional|team|customer|restaurant|pilot|prototype|mvp|requirements|scope|portfolio|founders|operations|engineering|designers|staff|launch|business)\b/;
+const reflectionPattern =
+  /\b(i learned|what i learned|next time|if i did it again|that taught me|lesson|i would repeat|i would do differently|since then|going forward|now i)\b/;
+const reflectionForwardPattern =
+  /\b(next time|if i did it again|i would repeat|i would do differently|since then|going forward|now i)\b/;
+const tradeoffPattern =
+  /\btrade[- ]?off|instead of|rather than|versus|vs\.?|balanced|defer(red)?|cut\b[^.?!\n]{0,60}\bto\b|prioriti[sz]ed\b/;
+const tradeoffRationalePattern =
+  /\bbecause\b|\bso that\b|\bto protect\b|\bto keep\b|\bto avoid\b|\bthat would\b/;
+const weakTradeoffPattern = /\bdecided to|chose to|picked\b/;
+const explicitResistancePattern =
+  /\bpushback|resistance|objection|disagreed|conflict|skeptical|concerned|friction|tension|blocked\b/;
+const impliedResistancePattern =
+  /\bworkload increased|adjacent team|tighter turnaround|operational burden|downstream pain|issue was that|challenge(s)? for|strain|unhappy|hesitant|slow them down|affected team|concern raised\b/;
+const strategicPattern =
+  /\bcompany|organization|org|team-wide|roadmap|business|customer|executive|system|operational advantage|expense|planning|wider team|wider business\b/;
+
+type CriterionAssessmentMap = Record<MissingComponent, CriterionAssessment>;
+
+interface AssessmentContext {
+  transcript: string;
+  normalized: string;
+  sentences: string[];
+  questionCode: QuestionCode;
+  wordCount: number;
+}
 
 export function evaluateAnswerHeuristically(input: EvaluationInput): {
   evaluation: EvaluationResult;
@@ -77,12 +151,21 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
   const transcript = input.transcript.trim();
   const normalized = transcript.toLowerCase();
   const deliveryScore = scoreDelivery(input.deliveryMetrics);
-  const starAssessment = assessStarSections(transcript, input.question.code);
-  const missing = detectMissingComponents(normalized, input.question.code, starAssessment);
-  const strengths = detectStrengths(normalized, input.question.code, input.cvSummary, starAssessment);
-  const rawScore = scoreContent(missing, normalized, starAssessment);
-  const capsApplied = detectCaps(input, missing, normalized);
-  const cappedScore = normalizeTopScore(applyCaps(rawScore, capsApplied), missing);
+  const criterionAssessment = assessCriteria(transcript, input.question.code);
+  const starAssessment = toStarAssessment(criterionAssessment);
+  const missingComponents = deriveMissingComponents(
+    criterionAssessment,
+    input.question.code,
+    input.question.rubric.mustInclude,
+  );
+  const strengths = detectStrengths(
+    criterionAssessment,
+    input.question,
+    input.cvSummary,
+  );
+  const rawScore = scoreContent(input.question, criterionAssessment);
+  const capsApplied = detectCaps(input, criterionAssessment, normalized);
+  const cappedScore = normalizeTopScore(applyCaps(rawScore, capsApplied), missingComponents);
   const weightedContentScore = roundScore(cappedScore * input.seniorityMultiplier);
   const weightedContentMax = roundScore(5 * input.seniorityMultiplier);
 
@@ -92,25 +175,21 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
     weightedContentScore,
     weightedContentMax,
     deliveryScore,
+    criterionAssessment,
     starAssessment,
-    missingComponents: missing,
+    missingComponents,
     strengths,
-    nudges: missing.length > 0 ? [buildNudge(input.question, strengths, missing)] : [],
+    nudges:
+      missingComponents.length > 0
+        ? [buildNudge(input.question, strengths, missingComponents)]
+        : [],
     capsApplied,
     contentReasoning: {
       structure: describeStructure(starAssessment),
-      ownership: missing.includes("ownership")
-        ? "Ownership is not yet explicit enough."
-        : "Ownership is explicit and credible.",
-      metrics: missing.includes("metric")
-        ? "The answer lacks quantified impact."
-        : "The answer includes measurable impact.",
-      tradeoffs: missing.includes("tradeoff")
-        ? "Trade-offs are implied but not explicit."
-        : "Trade-offs are articulated clearly.",
-      reflection: missing.includes("reflection")
-        ? "Reflection is limited or absent."
-        : "Reflection shows learning and transferability.",
+      ownership: criterionAssessment.ownership.reason,
+      metrics: criterionAssessment.metric.reason,
+      tradeoffs: criterionAssessment.tradeoff.reason,
+      reflection: criterionAssessment.reflection.reason,
     },
     deliveryReasoning: {
       clarity:
@@ -138,108 +217,141 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
   return { evaluation, feedback };
 }
 
+export function assessCriteria(
+  transcript: string,
+  questionCode: QuestionCode,
+): CriterionAssessmentMap {
+  const source = transcript.trim();
+  const context: AssessmentContext = {
+    transcript: source,
+    normalized: source.toLowerCase(),
+    sentences: splitIntoSentences(source),
+    questionCode,
+    wordCount: source.split(/\s+/).filter(Boolean).length,
+  };
+
+  const assessment: CriterionAssessmentMap = {
+    situation: assessSituation(context),
+    task: assessTask(context),
+    action: assessAction(context),
+    result: assessResult(context),
+    metric: assessMetric(context),
+    ownership: assessOwnership(context),
+    reflection: assessReflection(context),
+    tradeoff: assessTradeoff(context),
+    resistance: assessResistance(context),
+    strategic_layer: assessStrategicLayer(context),
+  };
+
+  return applyShortAnswerFloor(assessment, context.wordCount);
+}
+
 export function assessStarSections(
   transcript: string,
-  _questionCode: string,
+  questionCode: QuestionCode,
 ): Record<StarSection, StarSectionAssessment> {
-  const source = transcript.trim();
-  const normalized = source.toLowerCase();
-  const sentences = splitIntoSentences(source);
-  const assessment = {
-    situation: assessSituation(normalized, sentences),
-    task: assessTask(normalized, sentences),
-    action: assessAction(normalized, sentences),
-    result: assessResult(normalized, sentences),
-  } satisfies Record<StarSection, StarSectionAssessment>;
-
-  return applyShortAnswerFloor(assessment, normalized);
+  return toStarAssessment(assessCriteria(transcript, questionCode));
 }
 
 export function detectMissingComponents(
-  normalized: string,
-  questionCode: string,
-  starAssessment = assessStarSections(normalized, questionCode),
+  transcript: string,
+  questionCode: QuestionCode,
+  criterionAssessment = assessCriteria(transcript, questionCode),
+  requiredCriteria?: MissingComponent[],
 ): MissingComponent[] {
-  const missing = deriveMissingComponents(starAssessment, questionCode);
-
-  if (!hasMetric(normalized)) missing.push("metric");
-  if (!hasOwnership(normalized)) missing.push("ownership");
-  if (!hasReflection(normalized) && questionCode !== "Q10") missing.push("reflection");
-  if (!hasTradeoff(normalized) && ["Q1", "Q4", "Q6", "Q8", "Q10"].includes(questionCode)) {
-    missing.push("tradeoff");
-  }
-  if (!hasResistance(normalized) && ["Q2", "Q4"].includes(questionCode)) {
-    missing.push("resistance");
-  }
-  if (!hasStrategicLayer(normalized) && ["Q1", "Q4", "Q10"].includes(questionCode)) {
-    missing.push("strategic_layer");
-  }
-
-  return Array.from(new Set(missing));
+  return deriveMissingComponents(criterionAssessment, questionCode, requiredCriteria);
 }
 
 export function deriveMissingComponents(
-  starAssessment: Record<StarSection, StarSectionAssessment>,
-  questionCode: string,
+  criterionAssessment: CriterionAssessmentMap,
+  questionCode: QuestionCode,
+  requiredCriteria?: MissingComponent[],
 ): MissingComponent[] {
-  const missing: MissingComponent[] = [];
+  const relevant = getRelevantCriteria(questionCode, requiredCriteria);
+  return relevant.filter((criterion) => criterionAssessment[criterion].status === "missing");
+}
 
-  if (starAssessment.situation.status === "missing") missing.push("situation");
-  if (starAssessment.task.status === "missing" && questionCode !== "Q10") missing.push("task");
-  if (starAssessment.action.status === "missing") missing.push("action");
-  if (starAssessment.result.status === "missing") missing.push("result");
+export function normalizeCriterionAssessment(
+  candidate: Partial<Record<MissingComponent, CriterionAssessment>> | undefined,
+  transcript: string,
+  questionCode: QuestionCode,
+): CriterionAssessmentMap {
+  const heuristic = assessCriteria(transcript, questionCode);
+  if (!candidate) {
+    return heuristic;
+  }
 
-  return missing;
+  return criteriaOrder.reduce<CriterionAssessmentMap>((accumulator, criterion) => {
+    const parsed = candidate[criterion];
+    const fallback = heuristic[criterion];
+    const parsedStatus = parsed?.status ?? fallback.status;
+    const status =
+      parsedStatus === "covered" && fallback.status !== "covered"
+        ? "weak"
+        : parsedStatus;
+
+    accumulator[criterion] = buildCriterionAssessment(
+      status,
+      parsed?.reason?.trim() || fallback.reason,
+      parsed?.evidence?.trim() || fallback.evidence,
+      parsed?.strictnessNote?.trim() || fallback.strictnessNote,
+    );
+    return accumulator;
+  }, {} as CriterionAssessmentMap);
 }
 
 export function normalizeStarAssessment(
   candidate: Record<StarSection, StarSectionAssessment> | undefined,
   transcript: string,
-  questionCode: string,
+  questionCode: QuestionCode,
 ): Record<StarSection, StarSectionAssessment> {
-  const heuristic = assessStarSections(transcript, questionCode);
+  const criterionAssessment = normalizeCriterionAssessment(undefined, transcript, questionCode);
+  const fallback = toStarAssessment(criterionAssessment);
   if (!candidate) {
-    return heuristic;
+    return fallback;
   }
 
   return starSections.reduce<Record<StarSection, StarSectionAssessment>>((accumulator, section) => {
     const parsed = candidate[section];
-    const fallback = heuristic[section];
-    const parsedStatus = parsed?.status ?? fallback.status;
-    const verified =
-      parsedStatus === "covered" && fallback.status !== "covered"
-        ? buildStarSectionAssessment(
-            "weak",
-            fallback.reason,
-            parsed?.evidence?.trim() || fallback.evidence,
-          )
-        : buildStarSectionAssessment(
-            parsedStatus,
-            parsed?.reason?.trim() || fallback.reason,
-            parsed?.evidence?.trim() || fallback.evidence,
-          );
+    const heuristic = fallback[section];
+    const parsedStatus = parsed?.status ?? heuristic.status;
+    const status =
+      parsedStatus === "covered" && heuristic.status !== "covered"
+        ? "weak"
+        : parsedStatus;
 
-    accumulator[section] = verified;
+    accumulator[section] = buildStarSectionAssessment(
+      status,
+      parsed?.reason?.trim() || heuristic.reason,
+      parsed?.evidence?.trim() || heuristic.evidence,
+      parsed?.strictnessNote?.trim() || heuristic.strictnessNote,
+    );
     return accumulator;
   }, {} as Record<StarSection, StarSectionAssessment>);
 }
 
 function detectStrengths(
-  normalized: string,
-  questionCode: string,
+  criterionAssessment: CriterionAssessmentMap,
+  question: QuestionBankItem,
   cvSummary?: EvaluationInput["cvSummary"],
-  starAssessment?: Record<StarSection, StarSectionAssessment>,
 ) {
   const strengths: string[] = [];
 
-  if (starAssessment && starSections.every((section) => starAssessment[section].status === "covered")) {
+  if (starSections.every((section) => criterionAssessment[section].status === "covered")) {
     strengths.push("clear STAR structure");
   }
-  if (hasOwnership(normalized)) strengths.push("explicit ownership");
-  if (hasMetric(normalized)) strengths.push("quantified impact");
-  if (hasTradeoff(normalized)) strengths.push("trade-off clarity");
-  if (hasReflection(normalized) && questionCode !== "Q10") strengths.push("useful reflection");
-  if (hasStrategicLayer(normalized)) strengths.push("broader strategic framing");
+  if (criterionAssessment.ownership.status === "covered") strengths.push("explicit ownership");
+  if (criterionAssessment.metric.status === "covered") strengths.push("quantified impact");
+  if (criterionAssessment.tradeoff.status === "covered") strengths.push("trade-off clarity");
+  if (criterionAssessment.reflection.status === "covered" && question.code !== "Q10") {
+    strengths.push("useful reflection");
+  }
+  if (criterionAssessment.resistance.status === "covered" && ["Q2", "Q4"].includes(question.code)) {
+    strengths.push("credible resistance handling");
+  }
+  if (criterionAssessment.strategic_layer.status === "covered") {
+    strengths.push("broader strategic framing");
+  }
   if ((cvSummary?.quantifiedAchievements?.length ?? 0) > 0) {
     strengths.push("room to anchor the answer in a real CV achievement");
   }
@@ -248,38 +360,71 @@ function detectStrengths(
 }
 
 function scoreContent(
-  missing: MissingComponent[],
-  normalized: string,
-  starAssessment: Record<StarSection, StarSectionAssessment>,
+  question: QuestionBankItem,
+  criterionAssessment: CriterionAssessmentMap,
 ): 1 | 2 | 3 | 4 | 5 {
-  const starQualityTotal = starSections.reduce(
-    (sum, section) => sum + starAssessment[section].qualityScore,
+  const relevantCriteria = getRelevantCriteria(question.code, question.rubric.mustInclude);
+  const requiredQuality = relevantCriteria.reduce(
+    (sum, criterion) => sum + criterionAssessment[criterion].qualityScore,
     0,
   );
-  const nonStarMissingCount = missing.filter(
-    (component) => !starSections.includes(component as StarSection),
+  const ratio = relevantCriteria.length === 0 ? 0 : requiredQuality / (relevantCriteria.length * 2);
+  const allRequiredCovered = relevantCriteria.every(
+    (criterion) => criterionAssessment[criterion].status === "covered",
+  );
+  const missingRequiredCount = relevantCriteria.filter(
+    (criterion) => criterionAssessment[criterion].status === "missing",
   ).length;
-  const conciseBonus = normalized.split(/\s+/).length <= 260 ? 0.5 : 0;
-  const score = starQualityTotal - nonStarMissingCount + conciseBonus;
+  const weakRequiredCount = relevantCriteria.filter(
+    (criterion) => criterionAssessment[criterion].status === "weak",
+  ).length;
+  const strategicBonus =
+    criterionAssessment.strategic_layer.status === "covered" &&
+    ["Q1", "Q4", "Q10"].includes(question.code)
+      ? 0.04
+      : 0;
+  const adjustedRatio = clamp(ratio + strategicBonus, 0, 1);
 
-  if (score < 2.5) return 1;
-  if (score < 4.5) return 2;
-  if (score < 6.25) return 3;
-  if (score < 7.5) return 4;
+  if (adjustedRatio < 0.3 || missingRequiredCount >= Math.ceil(relevantCriteria.length / 2)) {
+    return 1;
+  }
+  if (adjustedRatio < 0.52) {
+    return 2;
+  }
+  if (adjustedRatio < 0.72) {
+    return 3;
+  }
+  if (!allRequiredCovered || weakRequiredCount > 0 || adjustedRatio < 0.9) {
+    return 4;
+  }
   return 5;
 }
 
 export function detectCaps(
   input: EvaluationInput,
-  missing: MissingComponent[],
+  criterionAssessmentOrMissing: CriterionAssessmentMap | MissingComponent[],
   normalized: string,
 ) {
   const caps: ScoreCap[] = [];
+  const requiredCriteria = new Set(getRelevantCriteria(input.question.code, input.question.rubric.mustInclude));
+  const criterionAssessment = Array.isArray(criterionAssessmentOrMissing)
+    ? toCriterionAssessmentFromMissing(criterionAssessmentOrMissing)
+    : criterionAssessmentOrMissing;
 
-  if (missing.includes("result")) caps.push("no_result");
-  if (missing.includes("ownership")) caps.push("no_ownership");
-  if (missing.includes("metric")) caps.push("no_metric");
-  if (missing.includes("reflection") && input.question.code !== "Q10") {
+  if (requiredCriteria.has("result") && criterionAssessment.result.status !== "covered") {
+    caps.push("no_result");
+  }
+  if (requiredCriteria.has("ownership") && criterionAssessment.ownership.status !== "covered") {
+    caps.push("no_ownership");
+  }
+  if (requiredCriteria.has("metric") && criterionAssessment.metric.status !== "covered") {
+    caps.push("no_metric");
+  }
+  if (
+    requiredCriteria.has("reflection") &&
+    input.question.code !== "Q10" &&
+    criterionAssessment.reflection.status !== "covered"
+  ) {
     caps.push("no_reflection");
   }
 
@@ -287,8 +432,11 @@ export function detectCaps(
     input.seniorityLevel === "senior" ||
     input.seniorityLevel === "lead_principal" ||
     input.seniorityLevel === "manager_director";
-
-  if (seniorityNeedsTradeoff && missing.includes("tradeoff")) {
+  if (
+    seniorityNeedsTradeoff &&
+    requiredCriteria.has("tradeoff") &&
+    criterionAssessment.tradeoff.status !== "covered"
+  ) {
     caps.push("no_tradeoff_senior_plus");
   }
 
@@ -341,9 +489,10 @@ export function buildAttemptFeedback(
       : ["You kept the answer concise enough to build on."];
   const improveNext = buildImproveNext(evaluation, input);
   const verdict = describeVerdict(evaluation.finalContentScoreAfterCaps);
-  const headline = buildHeadline(evaluation);
+  const headline = buildHeadline(evaluation, input.question);
+  const scoreExplanation = buildScoreExplanation(evaluation, input.question);
   const deliverySummary = buildDeliverySummary(evaluation);
-  const retryPrompt = buildRetryPrompt(evaluation, improveNext);
+  const retryPrompt = buildRetryPrompt(evaluation, input.question, improveNext);
   const answerStarter = buildAnswerStarter(
     evaluation.starAssessment,
     evaluation.missingComponents,
@@ -355,6 +504,7 @@ export function buildAttemptFeedback(
   return {
     verdict,
     headline,
+    scoreExplanation,
     strengths,
     improveNext,
     deliverySummary,
@@ -364,90 +514,100 @@ export function buildAttemptFeedback(
     answerStarter,
     cvLeverage: leverage.length > 0 ? leverage : undefined,
     roleRelevance,
-    spokenRecap: buildSpokenRecap(headline, improveNext, roleRelevance),
+    spokenRecap: buildSpokenRecap(headline, scoreExplanation, improveNext, roleRelevance),
   };
 }
 
 function describeVerdict(score: EvaluationResult["finalContentScoreAfterCaps"]) {
-  if (score >= 4) {
-    return "Strong answer";
+  switch (score) {
+    case 5:
+      return "Excellent answer";
+    case 4:
+      return "Strong answer";
+    case 3:
+      return "Good answer";
+    case 2:
+      return "Partial answer";
+    default:
+      return "Needs work";
   }
-  if (score === 3) {
-    return "Solid foundation";
-  }
-  return "Needs more detail";
 }
 
-function buildHeadline(evaluation: EvaluationResult) {
-  const resultStatus = evaluation.starAssessment.result.status;
-  const actionStatus = evaluation.starAssessment.action.status;
-  const situationStatus = evaluation.starAssessment.situation.status;
-  const allCovered = starSections.every(
+function buildHeadline(evaluation: EvaluationResult, question: QuestionBankItem) {
+  const unresolved = rankFollowUpCriteria(question, evaluation);
+  const top = unresolved[0];
+  const allStarCovered = starSections.every(
     (section) => evaluation.starAssessment[section].status === "covered",
   );
 
-  if (evaluation.finalContentScoreAfterCaps >= 4 && allCovered) {
-    return "This answer lands well and feels interview-ready.";
+  if (evaluation.finalContentScoreAfterCaps === 5) {
+    return "Clear, specific, and interview-ready from start to finish.";
   }
-  if (resultStatus === "missing") {
-    return "The story needs a clearer result so the answer actually lands.";
+
+  if (evaluation.finalContentScoreAfterCaps === 4) {
+    if (!top) {
+      return "Strong, convincing answer with only minor refinement left.";
+    }
+    return `Strong, credible example. To make it excellent, sharpen the ${formatCriterionForHeadline(top.criterion)}.`;
   }
-  if (resultStatus === "weak") {
-    return "You hinted at the outcome, but it still does not prove what changed.";
+
+  if (evaluation.finalContentScoreAfterCaps === 3 && allStarCovered) {
+    if (!top) {
+      return "Clear, convincing example with room to add a bit more senior-level depth.";
+    }
+    return `Clear, convincing example. To move it from good to strong, add the ${formatCriterionForHeadline(top.criterion)}.`;
   }
-  if (actionStatus === "missing") {
-    return "I can tell what the project was, but not enough about what you actually did.";
+
+  if (evaluation.starAssessment.result.status !== "covered") {
+    return evaluation.starAssessment.result.status === "weak"
+      ? "You hinted at the outcome, but it still does not prove what changed."
+      : "The story needs a clearer result so the answer actually lands.";
   }
-  if (actionStatus === "weak") {
-    return "You named your role, but not enough of what you actually did.";
+
+  if (evaluation.starAssessment.action.status !== "covered") {
+    return evaluation.starAssessment.action.status === "weak"
+      ? "You named your role, but not enough of what you actually did."
+      : "I can tell what the project was, but not enough about what you actually did.";
   }
-  if (situationStatus === "missing") {
-    return "The answer starts too abruptly and needs more setup.";
+
+  if (top) {
+    return `There is a credible answer here, but the ${formatCriterionForHeadline(top.criterion)} still needs more depth.`;
   }
-  if (situationStatus === "weak") {
-    return "You hinted at the context, but the challenge still is not concrete.";
+
+  return "There is a good answer here, but the structure still needs tightening.";
+}
+
+function buildScoreExplanation(evaluation: EvaluationResult, question: QuestionBankItem) {
+  const unresolved = rankFollowUpCriteria(question, evaluation).slice(0, 2);
+  if (unresolved.length === 0) {
+    return "All of the required criteria are covered strongly enough for this question.";
   }
-  return "There is a good answer here, but it still feels too thin to be convincing.";
+
+  const unresolvedText = unresolved.map((entry) => formatCriterionForExplanation(entry.criterion)).join(" and ");
+  const allStarCovered = starSections.every(
+    (section) => evaluation.starAssessment[section].status === "covered",
+  );
+
+  if (allStarCovered) {
+    return `All STAR sections are covered. This stays at ${evaluation.finalContentScoreAfterCaps}/5 because ${unresolvedText} ${unresolved.length === 1 ? "is" : "are"} still not strong enough.`;
+  }
+
+  return `This lands at ${evaluation.finalContentScoreAfterCaps}/5 because ${unresolvedText} ${unresolved.length === 1 ? "still needs" : "still need"} more interview-ready detail.`;
 }
 
 function buildImproveNext(
   evaluation: EvaluationResult,
   input: EvaluationInput,
 ) {
-  const missingStarSuggestions = getStarSectionsByStatus(evaluation.starAssessment, "missing").map(
-    toMissingStarSuggestion,
+  const criterionSuggestions = rankFollowUpCriteria(input.question, evaluation).map(({ criterion, status }) =>
+    buildCriterionSuggestion(criterion, status),
   );
-  const weakStarSuggestions = getStarSectionsByStatus(evaluation.starAssessment, "weak").map(
-    toWeakStarSuggestion,
-  );
-  const nonStarSuggestions = evaluation.missingComponents
-    .filter((component) => !starSections.includes(component as StarSection))
-    .map((component) => {
-      switch (component) {
-        case "metric":
-          return "Add a measurable outcome or a before-and-after indicator.";
-        case "ownership":
-          return "Make your own contribution unmistakably clear.";
-        case "reflection":
-          return "Close with what you learned or would repeat next time.";
-        case "tradeoff":
-          return "Explain the trade-off you had to navigate.";
-        case "resistance":
-          return "Show the resistance or pushback you had to work through.";
-        case "strategic_layer":
-          return "Connect the story to the broader team or business impact.";
-        default:
-          return "Add more concrete detail.";
-      }
-    });
   const suggestions = [
-    ...missingStarSuggestions,
-    ...weakStarSuggestions,
-    ...nonStarSuggestions,
+    ...criterionSuggestions,
     ...buildDeliveryImproveNext(input),
   ];
 
-  const unique = Array.from(new Set(suggestions));
+  const unique = Array.from(new Set(suggestions.filter(Boolean)));
   return unique.length > 0
     ? unique
     : ["Keep this structure and make the final impact even more specific."];
@@ -482,44 +642,38 @@ function buildDeliveryImproveNext(input: EvaluationInput) {
 
 function buildRetryPrompt(
   evaluation: EvaluationResult,
+  question: QuestionBankItem,
   improveNext: string[],
 ) {
-  if (improveNext.length === 0) {
+  const focus = rankFollowUpCriteria(question, evaluation)[0];
+  if (!focus || improveNext.length === 0) {
     return "Try again with the same structure and make the final impact even more concrete.";
   }
 
-  if (evaluation.starAssessment.result.status === "missing") {
-    return "Try again and make the result and what changed because of your work unmistakably clear.";
+  switch (focus.criterion) {
+    case "result":
+      return focus.status === "weak"
+        ? "Try again and make the outcome concrete enough to prove that it worked."
+        : "Try again and make the result and what changed because of your work unmistakably clear.";
+    case "action":
+      return focus.status === "weak"
+        ? "Try again and add the decisions and execution detail behind your actions."
+        : "Try again and spend more time on the actions you personally drove.";
+    case "tradeoff":
+      return "Try again and explain the trade-off you had to make and why you chose that path.";
+    case "reflection":
+      return "Try again and close with what you learned and how you would apply it next time.";
+    default:
+      return `Try again and focus on this next: ${improveNext[0]}`;
   }
-
-  if (evaluation.starAssessment.result.status === "weak") {
-    return "Try again and make the outcome concrete enough to prove that it worked.";
-  }
-
-  if (evaluation.starAssessment.action.status === "missing") {
-    return "Try again and spend more time on the actions you personally drove.";
-  }
-
-  if (evaluation.starAssessment.action.status === "weak") {
-    return "Try again and add the decisions and execution detail behind your actions.";
-  }
-
-  if (evaluation.starAssessment.situation.status !== "covered") {
-    return "Try again and anchor the answer in the situation before you move into the action.";
-  }
-
-  return `Try again and focus on this next: ${improveNext[0]}`;
 }
 
 function buildSpokenRecap(
   headline: string,
+  scoreExplanation: string,
   improveNext: string[],
   roleRelevance?: AttemptFeedback["roleRelevance"],
 ) {
-  if (improveNext.length === 0 && !roleRelevance) {
-    return "Strong answer. Keep that structure and sharpen the delivery.";
-  }
-
   const coachingLine =
     improveNext.length > 0
       ? `Improve next: ${improveNext.map(stripTrailingPeriod).join("; ")}.`
@@ -528,7 +682,7 @@ function buildSpokenRecap(
     ? `Role relevance: ${roleRelevance.headline} ${roleRelevance.bridge ?? roleRelevance.detail}`
     : "";
 
-  return [headline, coachingLine, relevanceLine].filter(Boolean).join(" ").trim();
+  return [headline, scoreExplanation, coachingLine, relevanceLine].filter(Boolean).join(" ").trim();
 }
 
 function buildRoleRelevanceFeedback(
@@ -664,10 +818,6 @@ function extractSignalTerms(values: string[]) {
   return terms;
 }
 
-function stripTrailingPeriod(value: string) {
-  return value.replace(/[.!\s]+$/g, "");
-}
-
 function buildDeliverySummary(evaluation: EvaluationResult) {
   return [
     evaluation.deliveryReasoning.clarity,
@@ -675,6 +825,63 @@ function buildDeliverySummary(evaluation: EvaluationResult) {
     evaluation.deliveryReasoning.fillerAssessment,
     evaluation.deliveryReasoning.conciseness,
   ].join(" ");
+}
+
+export function rankFollowUpCriteria(
+  question: QuestionBankItem,
+  evaluation: EvaluationResult,
+): Array<{ criterion: MissingComponent; status: CriterionAssessmentStatus; priority: number }> {
+  const relevant = getRelevantCriteria(question.code, question.rubric.mustInclude);
+  const criterionAssessment = resolveCriterionAssessment(evaluation);
+
+  return relevant
+    .filter((criterion) => criterionAssessment[criterion].status !== "covered")
+    .map((criterion) => {
+      const status = criterionAssessment[criterion].status;
+      return {
+        criterion,
+        status,
+        priority: getFollowUpPriorityScore(question, evaluation, criterion, status),
+      };
+    })
+    .sort((left, right) => right.priority - left.priority);
+}
+
+function getFollowUpPriorityScore(
+  question: QuestionBankItem,
+  evaluation: EvaluationResult,
+  criterion: MissingComponent,
+  status: CriterionAssessmentStatus,
+) {
+  const base: Record<MissingComponent, number> = {
+    result: 120,
+    tradeoff: 108,
+    metric: 102,
+    ownership: 96,
+    action: 94,
+    reflection: 82,
+    resistance: 80,
+    task: 72,
+    situation: 68,
+    strategic_layer: 60,
+  };
+  const activeCapBonus =
+    (criterion === "result" && evaluation.capsApplied.includes("no_result")) ||
+    (criterion === "ownership" && evaluation.capsApplied.includes("no_ownership")) ||
+    (criterion === "metric" && evaluation.capsApplied.includes("no_metric")) ||
+    (criterion === "reflection" && evaluation.capsApplied.includes("no_reflection")) ||
+    (criterion === "tradeoff" &&
+      evaluation.capsApplied.includes("no_tradeoff_senior_plus"))
+      ? 24
+      : 0;
+  const questionBonus =
+    (criterion === "tradeoff" && question.code === "Q1") ||
+    (criterion === "resistance" && ["Q2", "Q4"].includes(question.code)) ||
+    (criterion === "reflection" && ["Q2", "Q3", "Q9"].includes(question.code))
+      ? 8
+      : 0;
+
+  return base[criterion] + activeCapBonus + questionBonus + (status === "missing" ? 6 : 0);
 }
 
 const roleStopWords = new Set([
@@ -724,7 +931,7 @@ const transferableRoleTerms = new Set([
 function buildAnswerStarter(
   starAssessment: Record<StarSection, StarSectionAssessment>,
   missing: MissingComponent[],
-  questionCode: string,
+  questionCode: QuestionCode,
 ) {
   if (
     starSections.every((section) => starAssessment[section].status === "covered") &&
@@ -765,6 +972,8 @@ function toCandidateStrength(value: string) {
       return "You explained the trade-off behind the decision.";
     case "useful reflection":
       return "You showed what you learned from the experience.";
+    case "credible resistance handling":
+      return "You showed the real tension you had to work through.";
     case "broader strategic framing":
       return "You connected the story to the wider business context.";
     case "room to anchor the answer in a real CV achievement":
@@ -817,47 +1026,8 @@ function textSimilarity(left: string, right: string) {
   const leftTokens = new Set(left.split(/\W+/).filter(Boolean));
   const rightTokens = new Set(right.split(/\W+/).filter(Boolean));
   const shared = Array.from(leftTokens).filter((token) => rightTokens.has(token));
-  const union = new Set([
-    ...Array.from(leftTokens),
-    ...Array.from(rightTokens),
-  ]);
+  const union = new Set([...Array.from(leftTokens), ...Array.from(rightTokens)]);
   return union.size === 0 ? 0 : shared.length / union.size;
-}
-
-function hasMetric(text: string) {
-  return /\b\d+(\.\d+)?\s?(%|x|hours|days|weeks|months|people|customers|tickets|points)\b|\$\d+|\b\d+\b/.test(
-    text,
-  );
-}
-
-function hasOwnership(text: string) {
-  const iStatements = text.match(/\bi\b/g)?.length ?? 0;
-  const weStatements = text.match(/\bwe\b/g)?.length ?? 0;
-  return iStatements > 1 && iStatements >= weStatements;
-}
-
-function hasReflection(text: string) {
-  return /\b(i learned|i would|next time|if i did it again|that taught me|lesson)\b/.test(
-    text,
-  );
-}
-
-function hasTradeoff(text: string) {
-  return /\btrade[- ]?off|instead of|versus|vs\.?|priority was|balanced|because we chose\b/.test(
-    text,
-  );
-}
-
-function hasResistance(text: string) {
-  return /\bpushback|resistance|objection|disagreed|conflict|skeptical|concerned\b/.test(
-    text,
-  );
-}
-
-function hasStrategicLayer(text: string) {
-  return /\bcompany|organization|org|team-wide|roadmap|business|customer|executive|system\b/.test(
-    text,
-  );
 }
 
 function splitIntoSentences(text: string) {
@@ -867,16 +1037,16 @@ function splitIntoSentences(text: string) {
     .filter(Boolean);
 }
 
-function assessSituation(normalized: string, sentences: string[]) {
-  const evidence = findEvidence(sentences, (sentence) => {
+function assessSituation(context: AssessmentContext) {
+  const evidence = findEvidence(context.sentences, (sentence) => {
     const lowered = sentence.toLowerCase();
     return situationContextPattern.test(lowered) || situationChallengePattern.test(lowered);
   });
-  const hasContext = situationContextPattern.test(normalized);
-  const hasChallenge = situationChallengePattern.test(normalized);
+  const hasContext = situationContextPattern.test(context.normalized);
+  const hasChallenge = situationChallengePattern.test(context.normalized);
 
   if (hasContext && hasChallenge) {
-    return buildStarSectionAssessment(
+    return buildCriterionAssessment(
       "covered",
       "The answer sets up both the context and the challenge clearly enough to anchor the story.",
       evidence,
@@ -884,89 +1054,129 @@ function assessSituation(normalized: string, sentences: string[]) {
   }
 
   if (hasContext || hasChallenge) {
-    return buildStarSectionAssessment(
+    return buildCriterionAssessment(
       "weak",
       "You hinted at the context, but the challenge still is not concrete.",
       evidence,
     );
   }
 
-  return buildStarSectionAssessment(
+  return buildCriterionAssessment(
     "missing",
     "The answer never sets up the situation or why it was challenging.",
     null,
   );
 }
 
-function assessTask(normalized: string, sentences: string[]) {
-  const evidence = findEvidence(sentences, (sentence) => {
+function assessTask(context: AssessmentContext) {
+  const policy = getCriterionPolicy(context.questionCode, "task");
+  const evidence = findEvidence(context.sentences, (sentence) => {
     const lowered = sentence.toLowerCase();
-    return strongTaskPattern.test(lowered) || weakTaskPattern.test(lowered);
+    return (
+      strongTaskPattern.test(lowered) ||
+      weakTaskPattern.test(lowered) ||
+      containsAny(lowered, policy?.covered) ||
+      containsAny(lowered, policy?.weak)
+    );
   });
+  const hasStrongTask = strongTaskPattern.test(context.normalized) || containsAny(context.normalized, policy?.covered);
+  const hasWeakTask =
+    weakTaskPattern.test(context.normalized) ||
+    containsAny(context.normalized, policy?.weak) ||
+    (ownershipAnchorPattern.test(context.normalized) && !ownershipScopePattern.test(context.normalized));
 
-  if (strongTaskPattern.test(normalized)) {
-    return buildStarSectionAssessment(
+  if (hasStrongTask) {
+    return buildCriterionAssessment(
       "covered",
-      "The answer states the speaker's goal or responsibility explicitly.",
+      "The answer states the speaker's remit or responsibility clearly enough to count.",
       evidence,
+      policy?.strictnessNote,
     );
   }
 
-  if (weakTaskPattern.test(normalized)) {
-    return buildStarSectionAssessment(
+  if (hasWeakTask) {
+    return buildCriterionAssessment(
       "weak",
       "The answer gestures at ownership, but it does not clearly state the speaker's responsibility.",
       evidence,
+      policy?.strictnessNote,
     );
   }
 
-  return buildStarSectionAssessment(
+  return buildCriterionAssessment(
     "missing",
     "The answer never states what the speaker was personally responsible for.",
     null,
+    policy?.strictnessNote,
   );
 }
 
-function assessAction(normalized: string, sentences: string[]) {
-  const evidence = findEvidence(sentences, (sentence) => {
+function assessAction(context: AssessmentContext) {
+  const policy = getCriterionPolicy(context.questionCode, "action");
+  const specificPersonalActionPattern = new RegExp(
+    `\\bi\\b[^.!?\\n]{0,160}\\b(${specificActionVerbs.join("|")})\\b`,
+  );
+  const genericPersonalActionPattern = new RegExp(
+    `\\bi\\b[^.!?\\n]{0,160}\\b(${genericActionVerbs.join("|")})\\b`,
+  );
+  const collaborativeActionPattern = new RegExp(
+    `\\bwe\\b[^.!?\\n]{0,120}\\b(${collaborativeActionVerbs.join("|")})\\b`,
+  );
+  const evidence = findEvidence(context.sentences, (sentence) => {
     const lowered = sentence.toLowerCase();
-    return actionSpecificPattern.test(lowered) || actionGenericPattern.test(lowered);
+    return (
+      specificPersonalActionPattern.test(lowered) ||
+      genericPersonalActionPattern.test(lowered) ||
+      collaborativeActionPattern.test(lowered) ||
+      containsAny(lowered, policy?.covered)
+    );
   });
-  const hasSpecificAction = actionSpecificPattern.test(normalized);
-  const hasGenericAction = actionGenericPattern.test(normalized);
-  const hasActionDetail = actionDetailPattern.test(normalized);
-  const specificSentenceCount = sentences.filter((sentence) =>
-    actionSpecificPattern.test(sentence.toLowerCase()),
-  ).length;
+  const specificPersonalActionCount = context.sentences.filter((sentence) => {
+    const lowered = sentence.toLowerCase();
+    return specificPersonalActionPattern.test(lowered) || containsAny(lowered, policy?.covered);
+  }).length;
+  const hasSpecificPersonalAction =
+    specificPersonalActionPattern.test(context.normalized) || containsAny(context.normalized, policy?.covered);
+  const hasGenericPersonalAction = genericPersonalActionPattern.test(context.normalized);
+  const hasCollaborativeAction =
+    collaborativeActionPattern.test(context.normalized) || containsAny(context.normalized, policy?.weak);
+  const hasActionDetail =
+    actionDetailPattern.test(context.normalized) ||
+    specificPersonalActionCount >= 2 ||
+    /\bthen\b|\bafter\b|\bfinally\b|\boption(s)?\b/.test(context.normalized);
+  const anchoredOwnership = hasOwnershipAnchor(context.normalized);
 
   if (
-    (hasSpecificAction && (hasActionDetail || specificSentenceCount >= 2)) ||
-    (hasGenericAction && hasActionDetail)
+    (hasSpecificPersonalAction && hasActionDetail) ||
+    (anchoredOwnership && hasCollaborativeAction && (hasActionDetail || hasSpecificPersonalAction))
   ) {
-    return buildStarSectionAssessment(
+    return buildCriterionAssessment(
       "covered",
-      "The answer explains concrete actions, not just a generic claim of leadership or support.",
+      "The answer explains concrete actions and execution detail, not just a generic claim of leadership.",
       evidence,
+      policy?.strictnessNote,
     );
   }
 
-  if (hasSpecificAction || hasGenericAction) {
-    return buildStarSectionAssessment(
+  if (hasSpecificPersonalAction || hasGenericPersonalAction || hasCollaborativeAction) {
+    return buildCriterionAssessment(
       "weak",
       "You named your role, but not enough of what you actually did.",
       evidence,
+      policy?.strictnessNote,
     );
   }
 
-  return buildStarSectionAssessment(
+  return buildCriterionAssessment(
     "missing",
     "The answer does not explain the actions the speaker took.",
     null,
+    policy?.strictnessNote,
   );
 }
 
-function assessResult(normalized: string, sentences: string[]) {
-  const evidence = findEvidence(sentences, (sentence) => {
+function assessResult(context: AssessmentContext) {
+  const evidence = findEvidence(context.sentences, (sentence) => {
     const lowered = sentence.toLowerCase();
     return (
       resultOutcomePattern.test(lowered) ||
@@ -974,69 +1184,307 @@ function assessResult(normalized: string, sentences: string[]) {
       genericResultPattern.test(lowered)
     );
   });
-  const hasOutcome = resultOutcomePattern.test(normalized);
-  const hasProof = hasMetric(normalized) || resultProofPattern.test(normalized);
+  const hasOutcome = resultOutcomePattern.test(context.normalized);
+  const hasProof = metricPattern.test(context.normalized) || resultProofPattern.test(context.normalized);
 
   if (hasOutcome && hasProof) {
-    return buildStarSectionAssessment(
+    return buildCriterionAssessment(
       "covered",
       "The answer makes the outcome concrete and explains how success showed up.",
       evidence,
     );
   }
 
-  if (hasOutcome || genericResultPattern.test(normalized)) {
-    return buildStarSectionAssessment(
+  if (hasOutcome || genericResultPattern.test(context.normalized)) {
+    return buildCriterionAssessment(
       "weak",
       "You implied an outcome, but not clearly enough to prove impact.",
       evidence,
     );
   }
 
-  return buildStarSectionAssessment(
+  return buildCriterionAssessment(
     "missing",
     "The answer never lands on what changed or how success was known.",
     null,
   );
 }
 
-function applyShortAnswerFloor(
-  starAssessment: Record<StarSection, StarSectionAssessment>,
-  normalized: string,
-) {
-  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
-  if (wordCount >= 30) {
-    return starAssessment;
+function assessMetric(context: AssessmentContext) {
+  const evidence = findEvidence(context.sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return metricPattern.test(lowered) || weakMetricPattern.test(lowered);
+  });
+
+  if (metricPattern.test(context.normalized)) {
+    return buildCriterionAssessment(
+      "covered",
+      "The answer includes quantified evidence or a clear before-and-after.",
+      evidence,
+    );
   }
 
-  return starSections.reduce<Record<StarSection, StarSectionAssessment>>((accumulator, section) => {
-    const current = starAssessment[section];
-    accumulator[section] =
+  if (weakMetricPattern.test(context.normalized)) {
+    return buildCriterionAssessment(
+      "weak",
+      "The answer suggests impact, but not with enough precision to count as measurable proof.",
+      evidence,
+    );
+  }
+
+  return buildCriterionAssessment(
+    "missing",
+    "The answer does not include a metric or a concrete before-and-after indicator.",
+    null,
+  );
+}
+
+function assessOwnership(context: AssessmentContext) {
+  const policy = getCriterionPolicy(context.questionCode, "ownership");
+  const evidence = findEvidence(context.sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return (
+      hasOwnershipAnchor(lowered) ||
+      containsAny(lowered, policy?.covered) ||
+      containsAny(lowered, policy?.weak)
+    );
+  });
+  const hasClearAnchor = hasOwnershipAnchor(context.normalized) || containsAny(context.normalized, policy?.covered);
+  const hasScope = ownershipScopePattern.test(context.normalized) || countFirstPersonStatements(context.normalized) >= 2;
+  const hasWeakSignal =
+    /\bi\b/.test(context.normalized) ||
+    containsAny(context.normalized, policy?.weak);
+
+  if (hasClearAnchor && hasScope) {
+    return buildCriterionAssessment(
+      "covered",
+      "The answer makes the speaker's personal ownership and role in the work clear.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  if (hasClearAnchor || hasWeakSignal) {
+    return buildCriterionAssessment(
+      "weak",
+      "You hinted at your ownership, but your responsibility is still too vague.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  return buildCriterionAssessment(
+    "missing",
+    "The answer never makes the speaker's own contribution clear enough.",
+    null,
+    policy?.strictnessNote,
+  );
+}
+
+function assessReflection(context: AssessmentContext) {
+  const evidence = findEvidence(context.sentences, (sentence) =>
+    reflectionPattern.test(sentence.toLowerCase()),
+  );
+  const hasReflection = reflectionPattern.test(context.normalized);
+  const hasForwardApplication = reflectionForwardPattern.test(context.normalized);
+
+  if (hasReflection && hasForwardApplication) {
+    return buildCriterionAssessment(
+      "covered",
+      "The answer closes with a clear learning and how the speaker would apply it next time.",
+      evidence,
+    );
+  }
+
+  if (hasReflection) {
+    return buildCriterionAssessment(
+      "weak",
+      "The answer hints at a lesson, but the reflection still feels generic.",
+      evidence,
+    );
+  }
+
+  return buildCriterionAssessment(
+    "missing",
+    "The answer does not close with a learning or reflection.",
+    null,
+  );
+}
+
+function assessTradeoff(context: AssessmentContext) {
+  const policy = getCriterionPolicy(context.questionCode, "tradeoff");
+  const evidence = findEvidence(context.sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return (
+      tradeoffPattern.test(lowered) ||
+      weakTradeoffPattern.test(lowered) ||
+      containsAny(lowered, policy?.covered) ||
+      containsAny(lowered, policy?.falsePositive)
+    );
+  });
+  const hasTradeoffSignal = tradeoffPattern.test(context.normalized) || containsAny(context.normalized, policy?.covered);
+  const hasRationale = tradeoffRationalePattern.test(context.normalized);
+  const weakTradeoffSignal =
+    weakTradeoffPattern.test(context.normalized) || containsAny(context.normalized, policy?.falsePositive);
+
+  if (hasTradeoffSignal && hasRationale) {
+    return buildCriterionAssessment(
+      "covered",
+      "The answer explains the trade-off and why that path was chosen over the alternative.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  if (hasTradeoffSignal || weakTradeoffSignal) {
+    return buildCriterionAssessment(
+      "weak",
+      "The answer hints at a decision, but not the trade-off behind it clearly enough.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  return buildCriterionAssessment(
+    "missing",
+    "The answer does not explain a meaningful trade-off or prioritisation call.",
+    null,
+    policy?.strictnessNote,
+  );
+}
+
+function assessResistance(context: AssessmentContext) {
+  const policy = getCriterionPolicy(context.questionCode, "resistance");
+  const evidence = findEvidence(context.sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return (
+      explicitResistancePattern.test(lowered) ||
+      impliedResistancePattern.test(lowered) ||
+      containsAny(lowered, policy?.covered)
+    );
+  });
+  const hasExplicitResistance = explicitResistancePattern.test(context.normalized);
+  const hasImplicitResistance =
+    impliedResistancePattern.test(context.normalized) || containsAny(context.normalized, policy?.covered);
+  const hasWeakResistance =
+    /\bissue|concern|challenge|friction|strain\b/.test(context.normalized);
+
+  if (hasExplicitResistance || hasImplicitResistance) {
+    return buildCriterionAssessment(
+      "covered",
+      "The answer shows a real opposing constraint, stakeholder concern, or resistance to work through.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  if (hasWeakResistance) {
+    return buildCriterionAssessment(
+      "weak",
+      "The answer implies tension, but it does not fully show the resistance that had to be resolved.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  return buildCriterionAssessment(
+    "missing",
+    "The answer does not show any real pushback, resistance, or opposing constraint.",
+    null,
+    policy?.strictnessNote,
+  );
+}
+
+function assessStrategicLayer(context: AssessmentContext) {
+  const policy = getCriterionPolicy(context.questionCode, "strategic_layer");
+  const evidence = findEvidence(context.sentences, (sentence) => {
+    const lowered = sentence.toLowerCase();
+    return strategicPattern.test(lowered) || containsAny(lowered, policy?.covered);
+  });
+  const hasStrategicLayer =
+    strategicPattern.test(context.normalized) || containsAny(context.normalized, policy?.covered);
+  const hasWeakStrategicLayer = /\bteam|customer|business\b/.test(context.normalized);
+
+  if (hasStrategicLayer) {
+    return buildCriterionAssessment(
+      "covered",
+      "The answer connects the work to wider team, customer, or business impact.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  if (hasWeakStrategicLayer) {
+    return buildCriterionAssessment(
+      "weak",
+      "The answer gestures at broader impact, but it does not really connect the story to the wider context.",
+      evidence,
+      policy?.strictnessNote,
+    );
+  }
+
+  return buildCriterionAssessment(
+    "missing",
+    "The answer does not connect the work to a wider team, customer, or business effect.",
+    null,
+    policy?.strictnessNote,
+  );
+}
+
+function applyShortAnswerFloor(
+  assessment: CriterionAssessmentMap,
+  wordCount: number,
+) {
+  if (wordCount >= 30) {
+    return assessment;
+  }
+
+  return criteriaOrder.reduce<CriterionAssessmentMap>((accumulator, criterion) => {
+    const current = assessment[criterion];
+    accumulator[criterion] =
       current.status === "covered"
-        ? buildStarSectionAssessment(
+        ? buildCriterionAssessment(
             "weak",
-            "The answer is too short for this section to count as fully covered yet.",
+            "The answer is too short for this point to count as fully covered yet.",
             current.evidence,
+            current.strictnessNote,
           )
         : current;
     return accumulator;
-  }, {} as Record<StarSection, StarSectionAssessment>);
+  }, {} as CriterionAssessmentMap);
+}
+
+function buildCriterionAssessment(
+  status: CriterionAssessmentStatus,
+  reason: string,
+  evidence: string | null,
+  strictnessNote?: string | null,
+): CriterionAssessment {
+  return {
+    status,
+    reason,
+    evidence: evidence?.trim() || null,
+    strictnessNote: strictnessNote?.trim() || null,
+    qualityScore: toQualityScore(status),
+  };
 }
 
 function buildStarSectionAssessment(
   status: StarSectionStatus,
   reason: string,
   evidence: string | null,
+  strictnessNote?: string | null,
 ): StarSectionAssessment {
   return {
     status,
     reason,
     evidence: evidence?.trim() || null,
+    strictnessNote: strictnessNote?.trim() || null,
     qualityScore: toQualityScore(status),
   };
 }
 
-function toQualityScore(status: StarSectionStatus): 0 | 1 | 2 {
+function toQualityScore(status: CriterionAssessmentStatus): 0 | 1 | 2 {
   switch (status) {
     case "covered":
       return 2;
@@ -1047,18 +1495,40 @@ function toQualityScore(status: StarSectionStatus): 0 | 1 | 2 {
   }
 }
 
+function toStarAssessment(
+  criterionAssessment: CriterionAssessmentMap,
+): Record<StarSection, StarSectionAssessment> {
+  return starSections.reduce<Record<StarSection, StarSectionAssessment>>((accumulator, section) => {
+    const item = criterionAssessment[section];
+    accumulator[section] = buildStarSectionAssessment(
+      item.status,
+      item.reason,
+      item.evidence,
+      item.strictnessNote,
+    );
+    return accumulator;
+  }, {} as Record<StarSection, StarSectionAssessment>);
+}
+
 function toStarCoverage(
   starAssessment: Record<StarSection, StarSectionAssessment>,
 ): StarCoverage {
-  return starSections.reduce<StarCoverage>((accumulator, section) => {
-    accumulator[section] = starAssessment[section].status;
-    return accumulator;
-  }, {
-    situation: "missing",
-    task: "missing",
-    action: "missing",
-    result: "missing",
-  });
+  return starSections.reduce<StarCoverage>(
+    (accumulator, section) => {
+      accumulator[section] = starAssessment[section].status;
+      return accumulator;
+    },
+    {
+      situation: "missing",
+      task: "missing",
+      action: "missing",
+      result: "missing",
+    },
+  );
+}
+
+function resolveCriterionAssessment(evaluation: EvaluationResult) {
+  return evaluation.criterionAssessment ?? toCriterionAssessmentFromMissing(evaluation.missingComponents, evaluation.starAssessment);
 }
 
 function getStarSectionsByStatus(
@@ -1068,34 +1538,112 @@ function getStarSectionsByStatus(
   return starSections.filter((section) => starAssessment[section].status === status);
 }
 
-function toMissingStarSuggestion(section: StarSection) {
-  switch (section) {
+function getRelevantCriteria(
+  questionCode: QuestionCode,
+  requiredCriteria?: MissingComponent[],
+) {
+  const relevant = new Set<MissingComponent>(requiredCriteria ?? []);
+
+  if (relevant.size === 0) {
+    relevant.add("situation");
+    if (questionCode !== "Q10") relevant.add("task");
+    relevant.add("action");
+    relevant.add("result");
+  }
+
+  if (["Q1", "Q4", "Q10"].includes(questionCode)) {
+    relevant.add("strategic_layer");
+  }
+
+  return criteriaOrder.filter((criterion) => relevant.has(criterion));
+}
+
+function buildCriterionSuggestion(
+  criterion: MissingComponent,
+  status: CriterionAssessmentStatus,
+) {
+  const weak = status === "weak";
+
+  switch (criterion) {
     case "result":
-      return "State the result and what changed because of your work.";
+      return weak
+        ? "You implied an outcome, but not clearly enough to prove impact."
+        : "State the result and what changed because of your work.";
     case "action":
-      return "Spend more time on the actions you took.";
+      return weak
+        ? "You named your role, but not enough of what you actually did."
+        : "Spend more time on the actions you took.";
     case "task":
-      return "Say what you were personally responsible for.";
+      return weak
+        ? "You hinted at your ownership, but your responsibility is still too vague."
+        : "Say what you were personally responsible for.";
     case "situation":
-      return "Open with the situation so the challenge feels real.";
+      return weak
+        ? "You hinted at the context, but the challenge still is not concrete."
+        : "Open with the situation so the challenge feels real.";
+    case "metric":
+      return weak
+        ? "You suggested impact, but add a metric or before-and-after to prove it."
+        : "Add a measurable outcome or a before-and-after indicator.";
+    case "ownership":
+      return weak
+        ? "Make your personal ownership sharper so it is unmistakably yours."
+        : "Make your own contribution unmistakably clear.";
+    case "reflection":
+      return weak
+        ? "Your lesson is there, but make it more specific and transferable."
+        : "Close with what you learned or would repeat next time.";
+    case "tradeoff":
+      return weak
+        ? "You described the choice, but make the trade-off behind it explicit."
+        : "Explain the trade-off you had to navigate.";
+    case "resistance":
+      return weak
+        ? "The tension is there, but make the pushback or friction more explicit."
+        : "Show the resistance or pushback you had to work through.";
+    case "strategic_layer":
+      return weak
+        ? "Connect the example more clearly to the broader team or business effect."
+        : "Connect the story to the broader team or business impact.";
     default:
       return "Add more concrete detail.";
   }
 }
 
-function toWeakStarSuggestion(section: StarSection) {
-  switch (section) {
-    case "result":
-      return "You implied an outcome, but not clearly enough to prove impact.";
-    case "action":
-      return "You named your role, but not enough of what you actually did.";
-    case "task":
-      return "You hinted at your ownership, but your responsibility is still too vague.";
-    case "situation":
-      return "You hinted at the context, but the challenge still is not concrete.";
+function formatCriterionForHeadline(criterion: MissingComponent) {
+  switch (criterion) {
+    case "strategic_layer":
+      return "broader business impact";
     default:
-      return "Add more concrete detail.";
+      return criterion.replaceAll("_", " ");
   }
+}
+
+function formatCriterionForExplanation(criterion: MissingComponent) {
+  switch (criterion) {
+    case "strategic_layer":
+      return "the broader business impact";
+    case "tradeoff":
+      return "the trade-off";
+    default:
+      return `the ${criterion.replaceAll("_", " ")}`;
+  }
+}
+
+function containsAny(text: string, patterns?: RegExp[]) {
+  if (!patterns || patterns.length === 0) {
+    return false;
+  }
+
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function hasOwnershipAnchor(text: string) {
+  return ownershipAnchorPattern.test(text) || strongTaskPattern.test(text);
+}
+
+function countFirstPersonStatements(text: string) {
+  return text.match(/\bi\b/g)?.length ?? 0;
 }
 
 function findEvidence(
@@ -1103,6 +1651,10 @@ function findEvidence(
   predicate: (sentence: string) => boolean,
 ) {
   return sentences.find((sentence) => predicate(sentence)) ?? null;
+}
+
+function stripTrailingPeriod(value: string) {
+  return value.replace(/[.!\s]+$/g, "");
 }
 
 function roundScore(value: number) {
@@ -1122,6 +1674,39 @@ function normalizeTopScore(
   }
 
   return Math.min(score, 4) as 1 | 2 | 3 | 4 | 5;
+}
+
+function toCriterionAssessmentFromMissing(
+  missingComponents: MissingComponent[],
+  starAssessment?: Partial<Record<StarSection, StarSectionAssessment>>,
+): CriterionAssessmentMap {
+  const missing = new Set(missingComponents);
+
+  return criteriaOrder.reduce<CriterionAssessmentMap>((accumulator, criterion) => {
+    if (criterion in (starAssessment ?? {})) {
+      const starCriterion = criterion as StarSection;
+      const candidate = starAssessment?.[starCriterion];
+      if (candidate) {
+        accumulator[criterion] = {
+          status: candidate.status,
+          reason: candidate.reason,
+          evidence: candidate.evidence,
+          strictnessNote: candidate.strictnessNote ?? null,
+          qualityScore: candidate.qualityScore,
+        };
+        return accumulator;
+      }
+    }
+
+    accumulator[criterion] = buildCriterionAssessment(
+      missing.has(criterion) ? "missing" : "covered",
+      missing.has(criterion)
+        ? `The answer does not yet satisfy the ${criterion.replaceAll("_", " ")} criterion.`
+        : `The answer appears to satisfy the ${criterion.replaceAll("_", " ")} criterion.`,
+      null,
+    );
+    return accumulator;
+  }, {} as CriterionAssessmentMap);
 }
 
 export function summarizeImprovementScores(values: number[]) {

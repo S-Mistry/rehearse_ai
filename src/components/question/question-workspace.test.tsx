@@ -304,6 +304,7 @@ function buildFetchStub() {
         feedback: {
           verdict: "Strong answer",
           headline: "This answer lands well and feels interview-ready.",
+          scoreExplanation: "All of the required criteria are covered strongly enough for this question.",
           strengths: ["You sound like the person who drove the work."],
           improveNext: ["Keep this structure and make the final impact even more specific."],
           deliverySummary: "Delivery was clear.",

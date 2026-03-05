@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "spike:score-models": "npx tsx scripts/score-model-spike.ts"
+    "spike:score-models": "npx tsx scripts/score-model-spike.ts",
+    "spike:score-audit": "npx tsx scripts/score-calibration-audit.ts"
   },
   "keywords": [],
   "author": "",

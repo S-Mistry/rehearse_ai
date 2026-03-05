@@ -60,7 +60,7 @@ describe("evaluate-answer scoring", () => {
 
     expect(result.evaluation.finalContentScoreAfterCaps).toBeLessThanOrEqual(2);
     expect(result.evaluation.capsApplied).toContain("short_answer_cap");
-    expect(result.feedback.verdict).toBe("Needs more detail");
+    expect(result.feedback.verdict).toBe("Needs work");
     expect(result.feedback.improveNext.length).toBeGreaterThan(0);
     expect(result.feedback.starCoverage.result).toBe("missing");
   });
@@ -183,6 +183,60 @@ describe("evaluate-answer scoring", () => {
     });
 
     expect(Object.values(result.feedback.starCoverage)).not.toContain("covered");
+  });
+
+  it("maps capped scores to the new verdict labels and exposes a score explanation", () => {
+    const question = questionBank.find((item) => item.code === "Q1");
+    if (!question) {
+      throw new Error("Expected Q1 in the question bank.");
+    }
+
+    const transcript =
+      "When a vendor delay put our launch at risk, I was responsible for recovering the timeline without cutting compliance. I mapped the critical path, ran daily decisions with engineering, and shipped on time. As a result, onboarding dropped from seven days to five. I learned to surface trade-offs earlier.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "senior",
+      seniorityMultiplier: seniorityConfig.senior.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 85),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.feedback.verdict).toBe("Good answer");
+    expect(result.feedback.scoreExplanation).toContain("3/5");
+  });
+
+  it("does not under-read ownership, action, or resistance in the supplied conflict example", () => {
+    const question = questionBank.find((item) => item.code === "Q2");
+    if (!question) {
+      throw new Error("Expected Q2 in the question bank.");
+    }
+
+    const transcript =
+      "I was managing a team that were introducing changes to an investment process. We scoped a new process that turned the investment decision around in 48 hours instead of four weeks. That created challenges for an adjacent team because their workload increased, so I met with the lead of that team and we discussed some options. We created a community for senior portfolio companies to coach founders and shifted the final pitch review closer to the pitch itself. That kept the faster process in place, cut operational overhead by over 500k, and the founders were happier because they received feedback much faster.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "manager_director",
+      seniorityMultiplier: seniorityConfig.manager_director.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 90),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.criterionAssessment.ownership.status).toBe("covered");
+    expect(result.evaluation.criterionAssessment.action.status).toBe("covered");
+    expect(result.evaluation.criterionAssessment.resistance.status).toBe("covered");
+    expect(result.feedback.improveNext).not.toContain("Make your own contribution unmistakably clear.");
+    expect(result.feedback.improveNext).not.toContain(
+      "Show the resistance or pushback you had to work through.",
+    );
+    expect(result.feedback.headline).not.toBe(
+      "I can tell what the project was, but not enough about what you actually did.",
+    );
   });
 
   it("returns sentence-case improvement items and includes delivery coaching", () => {
