@@ -304,7 +304,7 @@ function buildFetchStub() {
         feedback: {
           verdict: "Strong answer",
           headline: "This answer lands well and feels interview-ready.",
-          scoreExplanation: "All of the required criteria are covered strongly enough for this question.",
+          scoreExplanation: "All the required elements are covered well for this question.",
           strengths: ["You sound like the person who drove the work."],
           improveNext: ["Keep this structure and make the final impact even more specific."],
           deliverySummary: "Delivery was clear.",
@@ -382,7 +382,7 @@ describe("QuestionWorkspace", () => {
     await userEvent.click(screen.getByRole("button", { name: "Start interview" }));
 
     await waitFor(() =>
-      expect(screen.getByText("Recording without live captions")).toBeTruthy(),
+      expect(screen.getByText("Recording (captions paused)")).toBeTruthy(),
     );
 
     expect(fetch).toHaveBeenCalledWith("/api/questions/session-question-1/intro", {
@@ -393,7 +393,7 @@ describe("QuestionWorkspace", () => {
     expect(window.speechSynthesis.speak).not.toHaveBeenCalled();
     expect(
       screen.getByText(
-        "Recording is live. If captions do not appear, keep speaking and I'll transcribe the answer when you stop.",
+        "Recording. If captions don't appear, keep speaking. Your answer will be transcribed when you stop.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Editable transcript")).toBeNull();
@@ -418,12 +418,12 @@ describe("QuestionWorkspace", () => {
     FakeSpeechRecognition.lastInstance?.onerror?.(new Event("error"));
 
     await waitFor(() =>
-      expect(screen.getByText("Recording without live captions")).toBeTruthy(),
+      expect(screen.getByText("Recording (captions paused)")).toBeTruthy(),
     );
 
     expect(
       screen.getByText(
-        "Live transcript dropped, but recording is still active. Keep speaking and I'll transcribe the answer when you stop.",
+        "Live captions paused, but recording continues. Keep speaking — your answer will be transcribed when you stop.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "End answer" })).toHaveProperty(
@@ -469,7 +469,7 @@ describe("QuestionWorkspace", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "Microphone access was blocked. Voice practice requires microphone access to record your answer.",
+          "Microphone access was blocked. Please allow microphone access in your browser settings and try again.",
         ),
       ).toBeTruthy(),
     );

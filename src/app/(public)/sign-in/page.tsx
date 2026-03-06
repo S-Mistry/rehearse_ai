@@ -6,10 +6,10 @@ export default function SignInPage() {
       <div className="paper-panel rounded-xl p-8">
         <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Sign in</p>
         <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight">
-          Authentication is scaffolded for Supabase.
+          Sign in to Rehearse
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-grey-3">
-          Until env vars are configured, the app runs with a demo user so you can review the rehearsal flow end-to-end.
+          Sign-in is coming soon. For now, you can explore the full experience without an account.
         </p>
         <Link
           href="/dashboard"

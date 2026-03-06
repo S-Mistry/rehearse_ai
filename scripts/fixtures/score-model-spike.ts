@@ -86,7 +86,7 @@ export const scoreModelSpikeCases: ScoreModelSpikeCase[] = [
     questionCode: "Q1",
     seniorityLevel: "senior",
     transcript:
-      "I led a challenging launch with a lot of stakeholders and pressure. I managed the team, prioritized what mattered, and we got it done successfully. It was a big trade-off and everyone learned a lot.",
+      "I led a challenging launch and managed the team. I prioritized what mattered and we got it done successfully. It was a big trade-off and everyone learned a lot.",
     expectedScoreCeiling: 2,
     expectedCriteria: {
       action: "weak",
@@ -143,6 +143,23 @@ export const scoreModelSpikeCases: ScoreModelSpikeCase[] = [
       result: "weak",
     },
     tags: ["hard_fail", "ceiling_3"],
+  },
+  {
+    id: "q3-reflection-covered-no-next-time",
+    label: "Reflection covered without explicit next-time phrase",
+    questionCode: "Q3",
+    seniorityLevel: "mid_ic",
+    transcript:
+      "I shipped a release with an unvalidated dependency and it failed in production. I owned the miss, wrote the incident review, and rebuilt the release checklist with QA and support before we shipped again. That cut repeat incidents from four in a month to zero in the next two months. I learned that reliability improves when we validate dependencies before scope lock rather than treating them as implementation detail.",
+    expectedScoreFloor: 4,
+    expectedScoreCeiling: 4,
+    expectedCriteria: {
+      action: "covered",
+      result: "covered",
+      ownership: "covered",
+      reflection: "covered",
+    },
+    tags: ["targeted_regression", "reflection_recall"],
   },
   {
     id: "q4-mid-ambiguous",

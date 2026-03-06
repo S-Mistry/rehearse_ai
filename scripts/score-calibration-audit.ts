@@ -48,6 +48,13 @@ const criteria = [
 ] as const;
 
 type CriterionKey = (typeof criteria)[number];
+type CriterionStats = {
+  expectedChecks: number;
+  auditorChecks: number;
+  falsePositives: number;
+  falseNegatives: number;
+  auditorFlags: number;
+};
 
 async function main() {
   loadEnvConfig(process.cwd());
@@ -66,7 +73,9 @@ async function main() {
   }
 
   const report = [];
-  const criterionSummary = new Map<string, { expectedChecks: number; auditorChecks: number; falsePositives: number; falseNegatives: number; auditorFlags: number }>();
+  const criterionSummary = new Map<string, CriterionStats>();
+  const requiredCriterionSummary = new Map<string, CriterionStats>();
+  const optionalCriterionSummary = new Map<string, CriterionStats>();
   let inflatedScoreCount = 0;
   let deflatedScoreCount = 0;
 
@@ -76,6 +85,7 @@ async function main() {
       throw new Error(`Question ${spikeCase.questionCode} not found.`);
     }
 
+    const requiredCriteria = new Set(question.rubric.mustInclude);
     const input = applySpikeCaseDefaults(spikeCase, question);
     const primary = evaluateAnswerHeuristically(input);
     const auditStartedAt = Date.now();
@@ -95,34 +105,32 @@ async function main() {
       throw new Error(`Audit model did not return a structured result for ${spikeCase.id}.`);
     }
 
-    const comparisons = compareAgainstExpectations(spikeCase, primary.evaluation, parsedAudit);
+    const comparisons = compareAgainstExpectations(
+      spikeCase,
+      primary.evaluation,
+      parsedAudit,
+      requiredCriteria,
+    );
     inflatedScoreCount += comparisons.inflatedScore ? 1 : 0;
     deflatedScoreCount += comparisons.deflatedScore ? 1 : 0;
 
     for (const criterion of criteria) {
       const existing =
-        criterionSummary.get(criterion) ?? {
-          expectedChecks: 0,
-          auditorChecks: 0,
-          falsePositives: 0,
-          falseNegatives: 0,
-          auditorFlags: 0,
-        };
+        criterionSummary.get(criterion) ?? emptyStats();
+      const requiredExisting =
+        requiredCriterionSummary.get(criterion) ?? emptyStats();
+      const optionalExisting =
+        optionalCriterionSummary.get(criterion) ?? emptyStats();
       const result = comparisons.criterionChecks[criterion];
-      existing.auditorChecks += 1;
-      if (result.expected) {
-        existing.expectedChecks += 1;
-      }
-      if (result.falsePositive) {
-        existing.falsePositives += 1;
-      }
-      if (result.falseNegative) {
-        existing.falseNegatives += 1;
-      }
-      if (result.auditorFlagged) {
-        existing.auditorFlags += 1;
-      }
+      applyStats(existing, result);
       criterionSummary.set(criterion, existing);
+      if (result.isRequired) {
+        applyStats(requiredExisting, result);
+        requiredCriterionSummary.set(criterion, requiredExisting);
+      } else {
+        applyStats(optionalExisting, result);
+        optionalCriterionSummary.set(criterion, optionalExisting);
+      }
     }
 
     report.push({
@@ -146,7 +154,14 @@ async function main() {
     });
   }
 
-  const summary = buildSummary(scoreModelSpikeCases.length, inflatedScoreCount, deflatedScoreCount, criterionSummary);
+  const summary = buildSummary(
+    scoreModelSpikeCases.length,
+    inflatedScoreCount,
+    deflatedScoreCount,
+    criterionSummary,
+    requiredCriterionSummary,
+    optionalCriterionSummary,
+  );
   printSummary(summary);
   await writeReport({ generatedAt: new Date().toISOString(), auditPromptVersion: EVALUATOR_AUDIT_PROMPT_VERSION, summary, report });
 }
@@ -155,15 +170,18 @@ function compareAgainstExpectations(
   spikeCase: ScoreModelSpikeCase,
   evaluation: ReturnType<typeof evaluateAnswerHeuristically>["evaluation"],
   audit: z.infer<typeof auditSchema>,
+  requiredCriteria: Set<string>,
 ) {
   const criterionChecks = Object.fromEntries(
     criteria.map((criterion) => {
       const expected = spikeCase.expectedCriteria?.[criterion];
       const actual = evaluation.criterionAssessment[criterion].status;
       const auditor = audit.criterionAudit[criterion];
+      const isRequired = requiredCriteria.has(criterion);
       return [
         criterion,
         {
+          isRequired,
           expected: expected ?? null,
           actual,
           auditorStatus: auditor.status,
@@ -178,6 +196,7 @@ function compareAgainstExpectations(
   ) as Record<
     CriterionKey,
     {
+      isRequired: boolean;
       expected: NonNullable<ScoreModelSpikeCase["expectedCriteria"]>[CriterionKey] | null;
       actual: ReturnType<typeof evaluateAnswerHeuristically>["evaluation"]["criterionAssessment"][CriterionKey]["status"];
       auditorStatus: z.infer<typeof auditSchema>["criterionAudit"][CriterionKey]["status"];
@@ -204,31 +223,23 @@ function buildSummary(
   totalCases: number,
   inflatedScoreCount: number,
   deflatedScoreCount: number,
-  criterionSummary: Map<string, { expectedChecks: number; auditorChecks: number; falsePositives: number; falseNegatives: number; auditorFlags: number }>,
+  criterionSummary: Map<string, CriterionStats>,
+  requiredCriterionSummary: Map<string, CriterionStats>,
+  optionalCriterionSummary: Map<string, CriterionStats>,
 ) {
-  const criterionRates = Object.fromEntries(
-    Array.from(criterionSummary.entries()).map(([criterion, stats]) => {
-      const expectedDenominator = Math.max(1, stats.expectedChecks);
-      const auditorDenominator = Math.max(1, stats.auditorChecks);
-      return [
-        criterion,
-        {
-          falsePositiveRate:
-            stats.expectedChecks === 0 ? 0 : stats.falsePositives / expectedDenominator,
-          falseNegativeRate:
-            stats.expectedChecks === 0 ? 0 : stats.falseNegatives / expectedDenominator,
-          auditorFlagRate: stats.auditorFlags / auditorDenominator,
-          ...stats,
-        },
-      ];
-    }),
-  );
+  const criterionRates = toRateSummary(criterionSummary);
+  const requiredCriterionRates = toRateSummary(requiredCriterionSummary);
+  const optionalCriterionRates = toRateSummary(optionalCriterionSummary);
+  const requiredGate = aggregateGate(requiredCriterionRates);
 
   return {
     totalCases,
     inflatedScoreCount,
     deflatedScoreCount,
     criterionRates,
+    requiredCriterionRates,
+    optionalCriterionRates,
+    requiredGate,
   };
 }
 
@@ -244,6 +255,17 @@ function printSummary(summary: ReturnType<typeof buildSummary>) {
       `  ${criterion}: false positive ${toPercent(stats.falsePositiveRate)}, false negative ${toPercent(stats.falseNegativeRate)}, auditor flags ${toPercent(stats.auditorFlagRate)}`,
     );
   }
+  console.log("");
+  console.log("Required-criterion drift (go/no-go signal):");
+  for (const [criterion, stats] of Object.entries(summary.requiredCriterionRates)) {
+    console.log(
+      `  ${criterion}: false positive ${toPercent(stats.falsePositiveRate)}, false negative ${toPercent(stats.falseNegativeRate)}, auditor flags ${toPercent(stats.auditorFlagRate)}`,
+    );
+  }
+  console.log("");
+  console.log(
+    `Required gate totals: false positives ${summary.requiredGate.falsePositives}, false negatives ${summary.requiredGate.falseNegatives}, auditor flags ${summary.requiredGate.auditorFlags}`,
+  );
 }
 
 async function writeReport(report: unknown) {
@@ -257,6 +279,77 @@ async function writeReport(report: unknown) {
 
 function toPercent(value: number) {
   return `${Math.round(value * 1000) / 10}%`;
+}
+
+function emptyStats(): CriterionStats {
+  return {
+    expectedChecks: 0,
+    auditorChecks: 0,
+    falsePositives: 0,
+    falseNegatives: 0,
+    auditorFlags: 0,
+  };
+}
+
+function applyStats(
+  stats: CriterionStats,
+  result: {
+    expected: unknown;
+    falsePositive: boolean;
+    falseNegative: boolean;
+    auditorFlagged: boolean;
+  },
+) {
+  stats.auditorChecks += 1;
+  if (result.expected) {
+    stats.expectedChecks += 1;
+  }
+  if (result.falsePositive) {
+    stats.falsePositives += 1;
+  }
+  if (result.falseNegative) {
+    stats.falseNegatives += 1;
+  }
+  if (result.auditorFlagged) {
+    stats.auditorFlags += 1;
+  }
+}
+
+function toRateSummary(summary: Map<string, CriterionStats>) {
+  return Object.fromEntries(
+    Array.from(summary.entries()).map(([criterion, stats]) => {
+      const expectedDenominator = Math.max(1, stats.expectedChecks);
+      const auditorDenominator = Math.max(1, stats.auditorChecks);
+      return [
+        criterion,
+        {
+          falsePositiveRate:
+            stats.expectedChecks === 0 ? 0 : stats.falsePositives / expectedDenominator,
+          falseNegativeRate:
+            stats.expectedChecks === 0 ? 0 : stats.falseNegatives / expectedDenominator,
+          auditorFlagRate: stats.auditorFlags / auditorDenominator,
+          ...stats,
+        },
+      ];
+    }),
+  ) as Record<
+    string,
+    CriterionStats & { falsePositiveRate: number; falseNegativeRate: number; auditorFlagRate: number }
+  >;
+}
+
+function aggregateGate(
+  rates: Record<string, { falsePositives: number; falseNegatives: number; auditorFlags: number }>,
+) {
+  return Object.values(rates).reduce(
+    (accumulator, item) => {
+      accumulator.falsePositives += item.falsePositives;
+      accumulator.falseNegatives += item.falseNegatives;
+      accumulator.auditorFlags += item.auditorFlags;
+      return accumulator;
+    },
+    { falsePositives: 0, falseNegatives: 0, auditorFlags: 0 },
+  );
 }
 
 void main().catch((error) => {

@@ -8,7 +8,6 @@ import {
   CircleStop,
   LoaderCircle,
   Mic,
-  RotateCcw,
   Sparkles,
 } from "lucide-react";
 import { readApiError } from "@/lib/http/api-response";
@@ -319,7 +318,7 @@ export function QuestionWorkspace({
       current === "recording" ? "recording_degraded" : current,
     );
     setNotice(
-      "Live transcript dropped, but recording is still active. Keep speaking and I'll transcribe the answer when you stop.",
+      "Live captions paused, but recording continues. Keep speaking — your answer will be transcribed when you stop.",
     );
   }
 
@@ -384,14 +383,14 @@ export function QuestionWorkspace({
 
     if (!supportsVoiceTranscription) {
       setInterviewState("idle");
-      setError("Voice practice is unavailable until server transcription is enabled.");
+      setError("Voice practice is not available right now.");
       return;
     }
 
     if (!captureAvailable) {
       setInterviewState("idle");
       setError(
-        "Microphone capture is unavailable here. Voice practice requires microphone access in a supported browser.",
+        "Microphone is not available. Please use a browser that supports microphone access.",
       );
       return;
     }
@@ -427,18 +426,18 @@ export function QuestionWorkspace({
       const hasLiveTranscript = recognitionAvailable && startBrowserRecognition(answerTurnId);
       if (hasLiveTranscript) {
         setInterviewState("recording");
-        setNotice("Recording is live. Speak naturally and I'll keep the transcript updated.");
+        setNotice("Recording. Speak naturally — you'll see a live transcript.");
       } else {
         setInterviewState("recording_degraded");
         setNotice(
-          "Recording is live. If captions do not appear, keep speaking and I'll transcribe the answer when you stop.",
+          "Recording. If captions don't appear, keep speaking. Your answer will be transcribed when you stop.",
         );
       }
     } catch {
       activeAnswerTurnIdRef.current = null;
       setInterviewState("idle");
       setError(
-        "Microphone access was blocked. Voice practice requires microphone access to record your answer.",
+        "Microphone access was blocked. Please allow microphone access in your browser settings and try again.",
       );
     }
   }
@@ -495,7 +494,7 @@ export function QuestionWorkspace({
 
   function startInterview() {
     if (!supportsVoiceTranscription) {
-      setError("Voice practice is unavailable until server transcription is enabled.");
+      setError("Voice practice is not available right now.");
       return;
     }
 
@@ -564,7 +563,7 @@ export function QuestionWorkspace({
 
         const payload = (await response.json()) as ScoreRoundResponse;
         if (!response.ok || payload.flagged) {
-          setError(payload.error?.message ?? "Unable to score that round.");
+          setError(payload.error?.message ?? "Something went wrong scoring your answer. Please try again.");
           setInterviewState("idle");
           return;
         }
@@ -573,7 +572,7 @@ export function QuestionWorkspace({
           setLatestEvaluation(payload.evaluation);
           setConversationTurns(payload.conversationTurns ?? finalTurns);
           setFollowUpCount(1);
-          setNotice(`${interviewerName} asked one follow-up before scoring the round.`);
+          setNotice(`${interviewerName} has a follow-up question before scoring.`);
           setInterviewState("interviewer_speaking");
           playSpeech(payload.speech, payload.followUpPrompt, () => {
             void startCapture();
@@ -592,7 +591,7 @@ export function QuestionWorkspace({
           payload.questionStatus === "awaiting_retry"
             ? payload.feedback?.retryPrompt ??
                 "Try the question again with the missing detail filled in."
-            : "Round saved. You can continue when you are ready.",
+            : "Answer scored. Move to the next question when you're ready.",
         );
         setInterviewState("feedback");
         playSpeech(
@@ -601,7 +600,7 @@ export function QuestionWorkspace({
         );
         router.refresh();
       } catch {
-        setError("Unable to score the interview round right now.");
+        setError("Something went wrong. Please try again.");
         activeAnswerTurnIdRef.current = null;
         setInterviewState("idle");
       }
@@ -635,11 +634,11 @@ export function QuestionWorkspace({
       case "interviewer_speaking":
         return `${interviewerName} speaking`;
       case "arming_mic":
-        return "Arming mic";
+        return "Preparing microphone";
       case "recording":
         return "Recording";
       case "recording_degraded":
-        return "Recording without live captions";
+        return "Recording (captions paused)";
       case "scoring":
         return "Scoring";
       case "feedback":
@@ -733,7 +732,7 @@ export function QuestionWorkspace({
                 {currentQuestion.bank.title}
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-grey-3">
-                {interviewerName} opens each round, asks one follow-up if needed, and then scores the answer.
+                {interviewerName} will ask the question, may follow up once, then score your answer.
               </p>
             </div>
             <div className="space-y-3">
@@ -793,7 +792,7 @@ export function QuestionWorkspace({
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-grey-3">
-                Start the interview to hear {interviewerName} open the round and begin recording your answer.
+                Press &ldquo;Start interview&rdquo; below. {interviewerName} will ask the question, then it&rsquo;s your turn to answer.
               </div>
             )}
           </div>
@@ -806,7 +805,7 @@ export function QuestionWorkspace({
               className="inline-flex items-center gap-2 rounded-full bg-grey-1 px-5 py-3 text-sm text-white transition hover:bg-grey-2 disabled:opacity-50"
             >
               <Mic size={16} strokeWidth={1.5} />
-              {conversationTurns.length > 0 && latestFeedback ? "Start new attempt" : "Start interview"}
+              {conversationTurns.length > 0 && latestFeedback ? "Try again" : "Start interview"}
             </button>
             <button
               type="button"
@@ -823,17 +822,6 @@ export function QuestionWorkspace({
             </button>
             {latestFeedback ? (
               <>
-                {canRetry ? (
-                  <button
-                    type="button"
-                    onClick={startInterview}
-                    disabled={isPending}
-                    className="inline-flex items-center gap-2 rounded-full border border-grey-5 bg-body/70 px-5 py-3 text-sm transition hover:border-coral/30 hover:text-coral disabled:opacity-50"
-                  >
-                    <RotateCcw size={16} strokeWidth={1.5} />
-                    Try again
-                  </button>
-                ) : null}
                 <button
                   type="button"
                   onClick={continueFromRound}
@@ -865,7 +853,7 @@ export function QuestionWorkspace({
         <ScoreSheet evaluation={latestEvaluation} feedback={latestFeedback} />
         {latestFeedback ? (
           <div className="paper-panel rounded-xl p-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Next attempt</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-grey-4">What to improve</p>
             <p className="mt-4 text-sm leading-relaxed text-grey-3">
               {latestFeedback.retryPrompt}
             </p>
@@ -887,7 +875,7 @@ export function QuestionWorkspace({
                 onClick={startInterview}
                 className="mt-5 inline-flex items-center gap-2 text-sm text-grey-3 transition hover:text-coral"
               >
-                Prepare next attempt
+                Try again
                 <Sparkles size={14} strokeWidth={1.5} />
               </button>
             ) : null}

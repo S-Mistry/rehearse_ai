@@ -42,7 +42,7 @@ describe("StarCueStrip", () => {
     expect(screen.getByText("Missing")).toBeTruthy();
     expect(
       screen.getByText(
-        "Green means strong enough. Amber means mentioned but too thin. Gray means missing.",
+        "Green: covered well. Orange: mentioned but needs more depth. Gray: not included yet.",
       ),
     ).toBeTruthy();
   });

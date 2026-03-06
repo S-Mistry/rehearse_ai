@@ -19,7 +19,7 @@ export default async function HistoryDetailPage({
       <div className="paper-panel rounded-xl p-6">
         <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Replay</p>
         <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight">
-          Question-by-question ledger
+          Session review
         </h1>
       </div>
       {bundle.questions.map((question) => (

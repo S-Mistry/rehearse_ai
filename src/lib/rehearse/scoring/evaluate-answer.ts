@@ -104,11 +104,13 @@ const strongTaskPattern =
 const weakTaskPattern =
   /\bgoal|responsible|task|objective|ownership|accountable|needed to|had to|remit\b/;
 const actionDetailPattern =
-  /\b(first|second|third|by|through|using|with|across|daily|weekly|timeline|plan|checklist|workstream|stakeholder|stakeholders|engineering|product|support|vendor|compliance|experiment|analysis|critical path|decision|feature|metric|review|checkpoint|options|pilot|prototype|mvp|requirements|scope)\b/;
+  /\b(first|second|third|by|through|using|with|across|daily|weekly|timeline|plan|checklist|workstream|engineering|product|support|vendor|compliance|experiment|analysis|critical path|decision|feature|metric|review|checkpoint|options|pilot|prototype|mvp|requirements|scope|workflow|proposal|queue|decision log|escalation)\b/;
+const actionGenericSuccessPattern =
+  /\b(got it done|made it work|handled it|solved it|it worked|successful|successfully)\b/;
 const resultOutcomePattern =
-  /\b(as a result|result|outcome|led to|reduced|improved|increased|decreased|grew|launched|delivered|cut|raised|lowered|prevented|saved|on time|rolled out|happy|happier)\b/;
+  /\b(as a result|result|outcome|led to|reduced|improved|increased|decreased|grew|launched|delivered|cut|raised|lowered|prevented|saved|on time|rolled out|happy|happier|met the deadline|kept the renewal|without customer impact|avoided customer impact|zero compliance issues|finished\b)\b/;
 const resultProofPattern =
-  /\b(we knew|measured|tracked|saw|within|from\b.+\bto|customer|customers|adoption|retention|escalations|sla|complaints|tickets|conversion|activation|feedback|survey|renewal|retained|continued to use|adopted|usage|operational overhead|expense)\b/;
+  /\b(we knew|measured|tracked|saw|within|from\b.+\bto|customer|customers|adoption|retention|escalations|sla|complaints|tickets|conversion|activation|feedback|survey|renewal|retained|continued to use|adopted|usage|operational overhead|expense|met the deadline|kept the renewal|without customer impact|avoided customer impact|zero compliance issues)\b/;
 const genericResultPattern = /\b(solved|fixed|worked|successful|success|better|faster)\b/;
 const metricPattern =
   /\b\d+(\.\d+)?\s?(%|percent|x|hours?|days?|weeks?|months?|years?|people|customers?|tickets?|orders?|incidents?|minutes?|seconds?|points?|times?)\b|\$\d+(,\d{3})*(\.\d+)?|\bover\s+\$?\d+(,\d{3})*(\.\d+)?\b|\bfrom\b[^.?!\n]{0,60}\bto\b/i;
@@ -122,6 +124,10 @@ const reflectionPattern =
   /\b(i learned|what i learned|next time|if i did it again|that taught me|lesson|i would repeat|i would do differently|since then|going forward|now i)\b/;
 const reflectionForwardPattern =
   /\b(next time|if i did it again|i would repeat|i would do differently|since then|going forward|now i)\b/;
+const reflectionTransferPattern =
+  /\bi learned that\b[^.?!\n]{18,}\b(when|by|rather than|instead of|prevents?|helps?|means|more than|so that|if)\b/;
+const reflectionGenericPattern =
+  /\bi learned(?: that)?\b[^.?!\n]{0,30}\b(communication matters|it matters|be better|do better|learned a lot)\b/;
 const tradeoffPattern =
   /\btrade[- ]?off|instead of|rather than|versus|vs\.?|balanced|defer(red)?|cut\b[^.?!\n]{0,60}\bto\b|prioriti[sz]ed\b/;
 const tradeoffRationalePattern =
@@ -199,16 +205,16 @@ export function evaluateAnswerHeuristically(input: EvaluationInput): {
       pacing:
         input.deliveryMetrics.wordsPerMinute >= 120 &&
         input.deliveryMetrics.wordsPerMinute <= 170
-          ? "Pacing sits in a strong rehearsal range."
-          : "Pacing needs calibration for a calmer delivery.",
+          ? "Your pacing is in a good range."
+          : "Try slowing your pace for a calmer, more deliberate delivery.",
       fillerAssessment:
         input.deliveryMetrics.fillerRate < 3
-          ? "Filler usage is controlled."
-          : "Filler words are noticeable and weaken delivery confidence.",
+          ? "Filler words are well controlled."
+          : "Noticeable filler words — reducing them will make you sound more confident.",
       conciseness:
         input.deliveryMetrics.durationSeconds <= 180
-          ? "Length is close to the ideal interview window."
-          : "The answer is running long and should be tightened.",
+          ? "Good length — close to the ideal two-minute window."
+          : "The answer is running long. Aim for under two minutes.",
     },
     roleRelevance: buildRoleRelevance(input),
   };
@@ -397,6 +403,14 @@ function scoreContent(
   if (!allRequiredCovered || weakRequiredCount > 0 || adjustedRatio < 0.9) {
     return 4;
   }
+
+  if (
+    (question.code === "Q2" || question.code === "Q4") &&
+    criterionAssessment.strategic_layer.status !== "covered"
+  ) {
+    return 4;
+  }
+
   return 5;
 }
 
@@ -541,19 +555,19 @@ function buildHeadline(evaluation: EvaluationResult, question: QuestionBankItem)
   );
 
   if (evaluation.finalContentScoreAfterCaps === 5) {
-    return "Clear, specific, and interview-ready from start to finish.";
+    return "This answer is interview-ready. Clear, specific, and well-structured.";
   }
 
   if (evaluation.finalContentScoreAfterCaps === 4) {
     if (!top) {
-      return "Strong, convincing answer with only minor refinement left.";
+      return "Strong answer with just minor refinement left.";
     }
     return `Strong, credible example. To make it excellent, sharpen the ${formatCriterionForHeadline(top.criterion)}.`;
   }
 
   if (evaluation.finalContentScoreAfterCaps === 3 && allStarCovered) {
     if (!top) {
-      return "Clear, convincing example with room to add a bit more senior-level depth.";
+      return "Good, clear example. Adding more senior-level depth would push this higher.";
     }
     return `Clear, convincing example. To move it from good to strong, add the ${formatCriterionForHeadline(top.criterion)}.`;
   }
@@ -561,26 +575,26 @@ function buildHeadline(evaluation: EvaluationResult, question: QuestionBankItem)
   if (evaluation.starAssessment.result.status !== "covered") {
     return evaluation.starAssessment.result.status === "weak"
       ? "You hinted at the outcome, but it still does not prove what changed."
-      : "The story needs a clearer result so the answer actually lands.";
+      : "Your story needs a clearer result. What actually changed because of your work?";
   }
 
   if (evaluation.starAssessment.action.status !== "covered") {
     return evaluation.starAssessment.action.status === "weak"
       ? "You named your role, but not enough of what you actually did."
-      : "I can tell what the project was, but not enough about what you actually did.";
+      : "The project is clear, but the answer needs more about what you personally did.";
   }
 
   if (top) {
     return `There is a credible answer here, but the ${formatCriterionForHeadline(top.criterion)} still needs more depth.`;
   }
 
-  return "There is a good answer here, but the structure still needs tightening.";
+  return "There's a good answer here. Tightening the structure will bring it up.";
 }
 
 function buildScoreExplanation(evaluation: EvaluationResult, question: QuestionBankItem) {
   const unresolved = rankFollowUpCriteria(question, evaluation).slice(0, 2);
   if (unresolved.length === 0) {
-    return "All of the required criteria are covered strongly enough for this question.";
+    return "All the required elements are covered well for this question.";
   }
 
   const unresolvedText = unresolved.map((entry) => formatCriterionForExplanation(entry.criterion)).join(" and ");
@@ -696,21 +710,21 @@ function buildRoleRelevanceFeedback(
     case "direct_match":
       return {
         assessment: roleRelevance.assessment,
-        headline: "The example feels directly relevant to the role.",
+        headline: "This example maps well to the role.",
         detail: roleRelevance.reasoning,
         bridge: roleRelevance.bridge,
       };
     case "transferable":
       return {
         assessment: roleRelevance.assessment,
-        headline: "The example is transferable, but the role link needs to be explicit.",
+        headline: "This example is transferable, but you need to connect it more explicitly to the role.",
         detail: roleRelevance.reasoning,
         bridge: roleRelevance.bridge,
       };
     case "weak_match":
       return {
         assessment: roleRelevance.assessment,
-        headline: "The example feels too far from the role as told.",
+        headline: "This example feels too distant from the target role. Consider choosing a closer one.",
         detail: roleRelevance.reasoning,
         bridge: roleRelevance.bridge,
       };
@@ -1144,10 +1158,26 @@ function assessAction(context: AssessmentContext) {
     actionDetailPattern.test(context.normalized) ||
     specificPersonalActionCount >= 2 ||
     /\bthen\b|\bafter\b|\bfinally\b|\boption(s)?\b/.test(context.normalized);
+  const looksGenericSuccessOnly =
+    actionGenericSuccessPattern.test(context.normalized) &&
+    !/\b(mapped|designed|implemented|negotiated|set up|prototype|pilot|critical path|decision log|queue|proposal)\b/.test(
+      context.normalized,
+    );
   const anchoredOwnership = hasOwnershipAnchor(context.normalized);
+  const genericPersonalOnly =
+    hasGenericPersonalAction &&
+    !hasSpecificPersonalAction &&
+    !hasCollaborativeAction;
+  const singleSpecificActionWithoutExecution =
+    specificPersonalActionCount <= 1 &&
+    !hasCollaborativeAction &&
+    looksGenericSuccessOnly;
 
   if (
-    (hasSpecificPersonalAction && hasActionDetail) ||
+    (hasSpecificPersonalAction &&
+      hasActionDetail &&
+      !singleSpecificActionWithoutExecution &&
+      !looksGenericSuccessOnly) ||
     (anchoredOwnership && hasCollaborativeAction && (hasActionDetail || hasSpecificPersonalAction))
   ) {
     return buildCriterionAssessment(
@@ -1158,7 +1188,7 @@ function assessAction(context: AssessmentContext) {
     );
   }
 
-  if (hasSpecificPersonalAction || hasGenericPersonalAction || hasCollaborativeAction) {
+  if (hasSpecificPersonalAction || hasGenericPersonalAction || hasCollaborativeAction || genericPersonalOnly) {
     return buildCriterionAssessment(
       "weak",
       "You named your role, but not enough of what you actually did.",
@@ -1287,11 +1317,13 @@ function assessReflection(context: AssessmentContext) {
   );
   const hasReflection = reflectionPattern.test(context.normalized);
   const hasForwardApplication = reflectionForwardPattern.test(context.normalized);
+  const hasTransferableLearning = reflectionTransferPattern.test(context.normalized);
+  const isGenericLearning = reflectionGenericPattern.test(context.normalized);
 
-  if (hasReflection && hasForwardApplication) {
+  if (hasReflection && (hasForwardApplication || hasTransferableLearning) && !isGenericLearning) {
     return buildCriterionAssessment(
       "covered",
-      "The answer closes with a clear learning and how the speaker would apply it next time.",
+      "The answer closes with a clear, transferable learning that can be applied beyond this one story.",
       evidence,
     );
   }

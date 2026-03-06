@@ -23,7 +23,7 @@ export function SiteShell({
               <p className="font-serif text-xl font-medium tracking-tight text-grey-1">
                 Rehearse
               </p>
-              <p className="text-xs text-grey-3">Behavioural interview desk</p>
+              <p className="text-xs text-grey-3">Behavioural interview practice</p>
             </div>
           </Link>
           <nav className="flex items-center gap-3 text-sm text-grey-3">
@@ -38,7 +38,7 @@ export function SiteShell({
               className="inline-flex items-center gap-2 rounded-full bg-grey-1 px-4 py-2 text-white transition hover:bg-grey-2"
             >
               <LayoutDashboard size={16} strokeWidth={1.5} />
-              Start rehearsal
+              Start practicing
             </Link>
           </nav>
         </div>

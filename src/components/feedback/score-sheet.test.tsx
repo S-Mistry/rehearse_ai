@@ -104,8 +104,8 @@ describe("ScoreSheet", () => {
     render(<ScoreSheet evaluation={buildEvaluation()} feedback={buildFeedback()} />);
 
     const workedSection = screen.getByText("What worked").parentElement;
-    const improveSection = screen.getByText("Improve Next").parentElement;
-    const evidenceSection = screen.getByText("Evidence you could pull in").parentElement;
+    const improveSection = screen.getByText("What to improve").parentElement;
+    const evidenceSection = screen.getByText("Evidence from your background").parentElement;
 
     expect(workedSection).toBeTruthy();
     expect(improveSection).toBeTruthy();

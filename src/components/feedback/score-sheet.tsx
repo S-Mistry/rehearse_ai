@@ -9,7 +9,7 @@ export function ScoreSheet({
 }) {
   return (
     <div className="rounded-xl border border-grey-5 bg-white/75 p-4">
-      <p className="text-xs uppercase tracking-[0.22em] text-grey-4">How this answer landed</p>
+      <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Your score and feedback</p>
       {feedback ? (
         <div className="mt-4 space-y-4">
           <div className="rounded-xl border border-grey-5 bg-body/50 p-4">
@@ -40,7 +40,7 @@ export function ScoreSheet({
           </div>
 
           <div>
-            <p className="text-sm font-medium text-grey-1">Improve Next</p>
+            <p className="text-sm font-medium text-grey-1">What to improve</p>
             <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed text-grey-3">
               {feedback.improveNext.map((item) => (
                 <li key={item}>{item}</li>
@@ -49,7 +49,7 @@ export function ScoreSheet({
           </div>
 
           <div className="rounded-xl border border-grey-5 bg-white p-4">
-            <p className="text-sm font-medium text-grey-1">Delivery note</p>
+            <p className="text-sm font-medium text-grey-1">Delivery feedback</p>
             <p className="mt-2 text-sm leading-relaxed text-grey-3">
               {feedback.deliverySummary}
             </p>
@@ -57,7 +57,7 @@ export function ScoreSheet({
 
           {feedback.roleRelevance ? (
             <div className="rounded-xl border border-grey-5 bg-white p-4">
-              <p className="text-sm font-medium text-grey-1">Role Relevance</p>
+              <p className="text-sm font-medium text-grey-1">Role relevance</p>
               <p className="mt-2 text-sm font-medium text-grey-1">
                 {feedback.roleRelevance.headline}
               </p>
@@ -83,7 +83,7 @@ export function ScoreSheet({
 
           {feedback.cvLeverage?.length ? (
             <div>
-              <p className="text-sm font-medium text-grey-1">Evidence you could pull in</p>
+              <p className="text-sm font-medium text-grey-1">Evidence from your background</p>
               <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed text-grey-3">
                 {feedback.cvLeverage.map((item) => (
                   <li key={item}>{item}</li>
@@ -94,13 +94,13 @@ export function ScoreSheet({
         </div>
       ) : (
         <p className="mt-4 text-sm leading-relaxed text-grey-3">
-          Finish the interview round to see a plain-English read on what worked, what is still missing, and how to improve the next attempt.
+          Your feedback will appear here after you answer the question.
         </p>
       )}
 
       {evaluation && !feedback ? (
         <p className="mt-4 text-sm leading-relaxed text-grey-3">
-          Evaluation recorded.
+          Scoring complete.
         </p>
       ) : null}
     </div>

@@ -4,11 +4,11 @@ export default function TermsPage() {
       <div className="paper-panel rounded-xl p-8">
         <p className="text-xs uppercase tracking-[0.22em] text-grey-4">Terms</p>
         <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight">
-          Coaching constraints
+          Terms of use
         </h1>
         <div className="mt-6 space-y-4 text-sm leading-relaxed text-grey-3">
           <p>Rehearse is a preparation tool. It does not guarantee interview outcomes or hiring decisions.</p>
-          <p>The product provides rubric-driven coaching and should not be used for deceptive or discriminatory interview tactics.</p>
+          <p>Rehearse provides structured coaching to help you improve. It should not be used for deceptive or discriminatory purposes.</p>
           <p>Unsafe content may pause evaluation and redirect the session.</p>
         </div>
       </div>

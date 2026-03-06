@@ -19,11 +19,11 @@ export function StarCueStrip({
     <div className="rounded-xl border border-grey-5 bg-white/75 p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.22em] text-grey-4">STAR coverage</p>
+          <p className="text-xs uppercase tracking-[0.22em] text-grey-4">STAR breakdown</p>
           <p className="mt-2 text-sm text-grey-3">
             {feedback
-              ? "Green means strong enough. Amber means mentioned but too thin. Gray means missing."
-              : "Once the round is scored, this shows which parts of your story were actually present."}
+              ? "Green: covered well. Orange: mentioned but needs more depth. Gray: not included yet."
+              : "After scoring, this shows which parts of the STAR framework your answer covered."}
           </p>
         </div>
         <p className="shrink-0 pt-1 text-right text-xs text-grey-3">Attempt {attemptCount}/3</p>

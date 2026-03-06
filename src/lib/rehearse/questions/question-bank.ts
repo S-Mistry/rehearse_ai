@@ -11,27 +11,27 @@ export const seniorityConfig: Record<
   early_career: {
     label: "Early Career",
     multiplier: 0.9,
-    scopeHint: "Clear ownership and learning matter more than org-wide scope.",
+    scopeHint: "Focus on showing ownership and what you learned. Broad scope isn't expected.",
   },
   mid_ic: {
     label: "Mid / IC",
     multiplier: 1.0,
-    scopeHint: "Show dependable execution, metrics, and decision logic.",
+    scopeHint: "Show reliable execution, measurable results, and clear decision-making.",
   },
   senior: {
     label: "Senior",
     multiplier: 1.2,
-    scopeHint: "Show trade-offs, ambiguity handling, and cross-functional scope.",
+    scopeHint: "Show how you handle trade-offs, ambiguity, and cross-team collaboration.",
   },
   lead_principal: {
     label: "Lead / Principal",
     multiplier: 1.3,
-    scopeHint: "Show systems thinking, influence, and durable improvements.",
+    scopeHint: "Show systems thinking, influence across teams, and lasting improvements.",
   },
   manager_director: {
     label: "Manager / Director",
     multiplier: 1.5,
-    scopeHint: "Show strategic framing, stakeholder complexity, and org impact.",
+    scopeHint: "Show strategic thinking, stakeholder management, and organization-wide impact.",
   },
 };
 

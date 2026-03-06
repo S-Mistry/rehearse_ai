@@ -113,6 +113,28 @@ describe("evaluate-answer scoring", () => {
     expect(result.evaluation.starAssessment.action.status).toBe("weak");
   });
 
+  it("keeps generic leadership keyword answers weak on action", () => {
+    const question = questionBank.find((item) => item.code === "Q1");
+    if (!question) {
+      throw new Error("Expected Q1 in the question bank.");
+    }
+
+    const transcript =
+      "I led a challenging launch and managed the team. I prioritized what mattered and we got it done successfully.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "senior",
+      seniorityMultiplier: seniorityConfig.senior.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 45),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.criterionAssessment.action.status).toBe("weak");
+  });
+
   it("still marks concise but concrete STAR answers as covered", () => {
     const question = questionBank.find((item) => item.code === "Q1");
     if (!question) {
@@ -163,6 +185,51 @@ describe("evaluate-answer scoring", () => {
     expect(result.evaluation.missingComponents).toContain("metric");
   });
 
+  it("recognizes qualitative deadline and renewal outcomes as covered results", () => {
+    const question = questionBank.find((item) => item.code === "Q8");
+    if (!question) {
+      throw new Error("Expected Q8 in the question bank.");
+    }
+
+    const transcript =
+      "During our busiest quarter, I owned sequencing across product and engineering. I deferred lower-value migration work instead of squeezing everything into one release because missing the renewal would have hit revenue immediately. We kept the renewal, met the deadline, and finished cleanup later without customer impact.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "lead_principal",
+      seniorityMultiplier: seniorityConfig.lead_principal.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 70),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.criterionAssessment.result.status).toBe("covered");
+    expect(result.evaluation.criterionAssessment.metric.status).toBe("missing");
+  });
+
+  it("keeps vague success claims as weak results", () => {
+    const question = questionBank.find((item) => item.code === "Q1");
+    if (!question) {
+      throw new Error("Expected Q1 in the question bank.");
+    }
+
+    const transcript =
+      "When things got difficult, I worked hard with the team and it worked out successfully.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "mid_ic",
+      seniorityMultiplier: seniorityConfig.mid_ic.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 38),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.criterionAssessment.result.status).toBe("weak");
+  });
+
   it("prevents very short answers from turning any STAR section green", () => {
     const question = questionBank.find((item) => item.code === "Q1");
     if (!question) {
@@ -208,6 +275,28 @@ describe("evaluate-answer scoring", () => {
     expect(result.feedback.scoreExplanation).toContain("3/5");
   });
 
+  it("marks transferable learning as covered reflection without requiring explicit next-time phrasing", () => {
+    const question = questionBank.find((item) => item.code === "Q3");
+    if (!question) {
+      throw new Error("Expected Q3 in the question bank.");
+    }
+
+    const transcript =
+      "I shipped a release with an unvalidated dependency and it failed in production. I owned the miss, rebuilt the release checklist with QA and support, and cut repeat incidents from four in a month to zero in the next two months. I learned that reliability improves when we validate dependencies before scope lock rather than treating them as implementation detail.";
+    const result = evaluateAnswerHeuristically({
+      question,
+      transcript,
+      seniorityLevel: "mid_ic",
+      seniorityMultiplier: seniorityConfig.mid_ic.multiplier,
+      deliveryMetrics: computeDeliveryMetrics(transcript, 80),
+      previousAttempts: [],
+      cvSummary: null,
+      jdSummary: null,
+    });
+
+    expect(result.evaluation.criterionAssessment.reflection.status).toBe("covered");
+  });
+
   it("does not under-read ownership, action, or resistance in the supplied conflict example", () => {
     const question = questionBank.find((item) => item.code === "Q2");
     if (!question) {
@@ -235,7 +324,7 @@ describe("evaluate-answer scoring", () => {
       "Show the resistance or pushback you had to work through.",
     );
     expect(result.feedback.headline).not.toBe(
-      "I can tell what the project was, but not enough about what you actually did.",
+      "The project is clear, but the answer needs more about what you personally did.",
     );
   });
 
@@ -310,7 +399,7 @@ describe("evaluate-answer scoring", () => {
 
     expect(withRoleContext.evaluation.roleRelevance?.assessment).toBe("direct_match");
     expect(withRoleContext.feedback.roleRelevance?.headline).toBe(
-      "The example feels directly relevant to the role.",
+      "This example maps well to the role.",
     );
     expect(withoutRoleContext.feedback.roleRelevance).toBeUndefined();
     expect(withRoleContext.evaluation.finalContentScoreAfterCaps).toBeGreaterThan(0);

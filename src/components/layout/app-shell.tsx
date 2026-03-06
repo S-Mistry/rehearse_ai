@@ -5,7 +5,7 @@ import { DevRuntimeBadge } from "@/components/layout/dev-runtime-badge";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: House },
-  { href: "/setup", label: "New Rehearsal", icon: Sparkles },
+  { href: "/setup", label: "New Session", icon: Sparkles },
   { href: "/history", label: "History", icon: BookCheck },
   { href: "/profile/documents", label: "Documents", icon: FileStack },
   { href: "/profile", label: "Profile", icon: CircleUserRound },
@@ -26,7 +26,7 @@ export function AppShell({
           <div className="border-b border-grey-5/80 pb-4">
             <p className="font-serif text-2xl font-medium tracking-tight">Rehearse</p>
             <p className="mt-1 text-sm leading-relaxed text-grey-3">
-              A rehearsal desk for quantified, strategic behavioural answers.
+              Practice behavioural interview answers with structured scoring and coaching.
             </p>
           </div>
           <nav className="mt-4 space-y-2">

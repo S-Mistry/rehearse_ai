@@ -23,12 +23,12 @@ export default async function SessionSummaryPage({
         <div className="mt-4 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
             <h1 className="font-serif text-4xl font-medium tracking-tight md:text-5xl">
-              Interview-ready coverage across {bundle.aggregate.completedQuestions} of{" "}
+              You completed {bundle.aggregate.completedQuestions} of{" "}
               {bundle.aggregate.totalQuestions} questions
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-relaxed text-grey-3">
-              Delivery averaged {formatScore(bundle.aggregate.averageDelivery)} / 5. Strongest question:{" "}
-              {bundle.aggregate.strongestQuestionCode ?? "—"}. Weakest question:{" "}
+              Average delivery score: {formatScore(bundle.aggregate.averageDelivery)} / 5. Best question:{" "}
+              {bundle.aggregate.strongestQuestionCode ?? "—"}. Most room to improve:{" "}
               {bundle.aggregate.weakestQuestionCode ?? "—"}.
             </p>
           </div>
@@ -97,12 +97,12 @@ export default async function SessionSummaryPage({
                   {question.finalFeedback.strengths.join(", ") || "—"}
                 </p>
                 <p>
-                  <span className="font-medium text-grey-1">Improve Next:</span>{" "}
+                  <span className="font-medium text-grey-1">What to improve:</span>{" "}
                   {question.finalFeedback.improveNext.join(", ") || "None"}
                 </p>
                 {question.finalFeedback.roleRelevance ? (
                   <p>
-                    <span className="font-medium text-grey-1">Role Relevance:</span>{" "}
+                    <span className="font-medium text-grey-1">Role relevance:</span>{" "}
                     {question.finalFeedback.roleRelevance.headline}{" "}
                     {question.finalFeedback.roleRelevance.bridge ??
                       question.finalFeedback.roleRelevance.detail}

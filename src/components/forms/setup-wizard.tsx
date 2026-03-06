@@ -45,7 +45,7 @@ export function SetupWizard({
     startTransition(async () => {
       try {
         if (!isUsingJdContext && !targetRoleTitle.trim()) {
-          throw new Error("Add a job description or enter the target role before starting.");
+          throw new Error("Please add a job description or enter the target role to continue.");
         }
 
         const cvDocument =
@@ -63,7 +63,7 @@ export function SetupWizard({
 
         if (!resolvedSeniority) {
           throw new Error(
-            "We could not infer the role seniority from the job description. Enter the role manually and choose the seniority.",
+            "We couldn't detect the seniority from your job description. Please enter the role manually and choose a seniority level.",
           );
         }
 
@@ -81,7 +81,7 @@ export function SetupWizard({
 
         if (!sessionResponse.ok) {
           throw new Error(
-            (await readApiError(sessionResponse)) || "Unable to create the rehearsal session.",
+            (await readApiError(sessionResponse)) || "Something went wrong creating your session. Please try again.",
           );
         }
 
@@ -92,7 +92,7 @@ export function SetupWizard({
 
         if (!startResponse.ok) {
           throw new Error(
-            (await readApiError(startResponse)) || "Unable to start the rehearsal session.",
+            (await readApiError(startResponse)) || "Something went wrong starting your session. Please try again.",
           );
         }
 
@@ -102,7 +102,7 @@ export function SetupWizard({
         setError(
           submissionError instanceof Error
             ? submissionError.message
-            : "Unable to start the rehearsal.",
+            : "Something went wrong. Please try again.",
         );
       }
     });
@@ -116,17 +116,17 @@ export function SetupWizard({
             Setup
           </p>
           <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight">
-            Build the rehearsal context before the first question.
+            Set up your practice session.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-grey-3">
-            If you provide a job description, the setup will infer the role and seniority automatically. Use manual role entry only when you do not have a JD.
+            Add a job description and we&apos;ll detect the role and seniority for you. If you don&apos;t have one, enter the role manually below.
           </p>
 
           <div className="mt-8 grid gap-4">
             <div className="rounded-lg border border-grey-5 bg-white/75 p-4">
               <p className="text-sm font-medium text-grey-1">1. Interview context</p>
               <p className="mt-2 text-sm leading-relaxed text-grey-3">
-                Add the target role only if you are not supplying a JD. Company is always optional.
+                Enter the role you&apos;re interviewing for. If you add a job description below, this is filled in automatically. Company is optional.
               </p>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <label className="block">
@@ -138,8 +138,8 @@ export function SetupWizard({
                     className="mt-3 w-full rounded-lg border border-grey-5 bg-white px-4 py-3 text-sm text-grey-1 outline-none transition focus:border-coral/40"
                     placeholder={
                       isUsingJdContext
-                        ? "Disabled while a JD is being used"
-                        : "Use this when you do not have a JD"
+                        ? "Detected from your job description"
+                        : "e.g. Senior Product Manager"
                     }
                   />
                 </label>
@@ -155,9 +155,9 @@ export function SetupWizard({
               </div>
               {isUsingJdContext ? (
                 <p className="mt-4 rounded-md border border-green/30 bg-green/20 px-4 py-3 text-sm text-grey-3">
-                  JD context detected. Role and seniority will be inferred from the job description.
+                  Job description found. The role and seniority will be set automatically.
                   {inferredJdSeniority
-                    ? ` Current saved JD maps to ${seniorityConfig[inferredJdSeniority].label}.`
+                    ? ` Detected seniority: ${seniorityConfig[inferredJdSeniority].label}.`
                     : ""}
                 </p>
               ) : null}
@@ -167,7 +167,7 @@ export function SetupWizard({
               <div>
                 <p className="text-sm font-medium text-grey-1">2. Seniority</p>
                 <p className="mt-2 text-sm leading-relaxed text-grey-3">
-                  Because you are entering the role manually, choose the seniority we should score against.
+                  Choose the seniority level for your target role. Your answers will be scored against expectations for this level.
                 </p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   {seniorityLevels.map(([value, config]) => (
@@ -184,7 +184,7 @@ export function SetupWizard({
                     >
                       <p className="text-sm font-medium text-grey-1">{config.label}</p>
                       <p className="mt-1 text-xs uppercase tracking-[0.18em] text-grey-4">
-                        Content x{config.multiplier}
+                        Scoring: x{config.multiplier}
                       </p>
                       <p className="mt-3 text-sm leading-relaxed text-grey-3">
                         {config.scopeHint}
@@ -196,8 +196,8 @@ export function SetupWizard({
             ) : null}
 
             <DocumentPanel
-              title="3. Optional CV"
-              helper="Upload PDF or DOCX, or paste the text. Structured achievements will be used for leverage suggestions."
+              title="3. Your CV (optional)"
+              helper="Upload or paste your CV. Your achievements will be suggested as evidence during practice."
               text={cvText}
               onTextChange={setCvText}
               onFileChange={setCvFile}
@@ -207,8 +207,8 @@ export function SetupWizard({
             />
 
             <DocumentPanel
-              title="4. Optional JD"
-              helper="Upload the role description to infer the role, seniority, and more targeted interview context."
+              title="4. Job description (optional)"
+              helper="Upload or paste the job description. This sets your role, seniority, and tailors the questions to the position."
               text={jdText}
               onTextChange={setJdText}
               onFileChange={setJdFile}
@@ -225,19 +225,19 @@ export function SetupWizard({
           </p>
           <div className="mt-5 space-y-4 text-sm leading-relaxed text-grey-3">
             <p>
-              The interviewer opens each round, asks the core question, and may ask one follow-up before the answer is scored.
+              Lucy (your interviewer) asks one question at a time and may ask a follow-up before scoring your answer.
             </p>
             <p>
-              When a JD is present, role context and seniority come from the job description instead of asking you to choose them.
+              If you added a job description, the role and seniority are set automatically.
             </p>
             <p>
-              You will see live transcript updates when browser speech recognition is available. Voice practice still requires microphone access and server transcription.
+              You&apos;ll see a live transcript of your answer as you speak. Make sure to allow microphone access when prompted.
             </p>
             <p>
-              Coaching is shown in plain English after each round instead of exposing internal scoring jargon.
+              After each answer, you get plain-English feedback on what worked and what to improve.
             </p>
             <p>
-              Raw answer audio is processed in-request and not stored by default.
+              Your audio is used only to transcribe your answer and is not saved.
             </p>
           </div>
           {error ? (
@@ -256,7 +256,7 @@ export function SetupWizard({
             ) : (
               <Mic2 size={16} strokeWidth={1.5} />
             )}
-            Start the rehearsal
+            Start practicing
             <ArrowRight size={16} strokeWidth={1.5} />
           </button>
         </div>
@@ -291,14 +291,14 @@ function DocumentPanel({
       {documents.length > 0 ? (
         <div className="mt-4 rounded-lg border border-grey-5 bg-body/50 p-4">
           <label className="block text-sm font-medium text-grey-1">
-            Reuse an existing parsed document
+            Use a saved document
           </label>
           <select
             value={selectedDocumentId}
             onChange={(event) => onSelectDocument(event.target.value)}
             className="mt-3 w-full rounded-lg border border-grey-5 bg-white px-4 py-3 text-sm text-grey-1 outline-none transition focus:border-coral/40"
           >
-            <option value="">Use a new upload or pasted text</option>
+            <option value="">Upload or paste new text instead</option>
             {documents.map((document) => (
               <option key={document.id} value={document.id}>
                 {document.fileName ?? `${document.kind.toUpperCase()} ${document.createdAt.slice(0, 10)}`} · {document.parseStatus}
@@ -306,7 +306,7 @@ function DocumentPanel({
             ))}
           </select>
           <p className="mt-2 text-xs text-grey-4">
-            Selecting an existing document skips new upload and text parsing for this step.
+            Choosing a saved document will skip the upload below.
           </p>
         </div>
       ) : null}
@@ -317,13 +317,13 @@ function DocumentPanel({
           rows={8}
           disabled={Boolean(selectedDocumentId)}
           className="rounded-lg border border-grey-5 bg-body/50 px-4 py-3 text-sm text-grey-1 outline-none transition focus:border-coral/40"
-          placeholder="Paste the document text here if you want a no-upload path."
+          placeholder="Or paste the text here instead of uploading a file."
         />
         <label className="flex cursor-pointer flex-col justify-between rounded-lg border border-dashed border-grey-5 bg-body/40 p-4">
           <div>
             <p className="text-sm font-medium text-grey-1">Upload file</p>
             <p className="mt-2 text-sm leading-relaxed text-grey-3">
-              PDF, DOCX, or TXT. Upload overrides the textarea if both are present.
+              PDF, DOCX, or TXT. If you upload a file, it takes priority over pasted text.
             </p>
           </div>
           <input
